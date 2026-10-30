@@ -14,7 +14,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 
-const themeInit = `try{var t=localStorage.getItem('adpilot.theme');if(t)document.documentElement.dataset.theme=t}catch(e){}`;
+// Always open in light mode; dark mode is a per-visit toggle.
+const themeInit = `document.documentElement.dataset.theme='light';try{localStorage.removeItem('adpilot.theme')}catch(e){}`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

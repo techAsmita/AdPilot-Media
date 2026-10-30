@@ -173,7 +173,7 @@ npm test   # 7 tests: number extraction, planted failures, limits, counts, citat
 - **Library and Exports:** past runs and exported packs are saved in the browser.
 - **Demo mode:** a recorded run (clearly labelled) for offline presentations.
 - **Responsive:** fits on one screen on laptops (panels scroll inside), and stacks with a bottom nav on phones.
-- **Light and dark themes** with a smooth 350 ms transition. The choice is remembered, and it's applied before first paint so there's no flash.
+- **Light and dark themes** with a smooth 350 ms transition. The app always opens in light mode; dark mode is one click away.
 - **Self-hosted fonts** (Newsreader, Inter, JetBrains Mono, Caveat via Fontsource): no external font requests, so the UI looks the same offline.
 
 ### Screenshots

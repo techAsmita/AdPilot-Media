@@ -70,7 +70,6 @@ export default function Home() {
     root.classList.add("theme-anim");
     root.dataset.theme = t;
     window.setTimeout(() => root.classList.remove("theme-anim"), 400);
-    try { localStorage.setItem("adpilot.theme", t); } catch {}
   };
 
   const patch = (fn: (r: RunState) => Partial<RunState>) => setRun((r) => ({ ...r, ...fn(r) }));
