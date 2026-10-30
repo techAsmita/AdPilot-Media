@@ -85,7 +85,7 @@ flowchart LR
 | 4 | **Writer** | Writes all 11 assets in **one structured call** (Zod schema), so the message stays consistent across channels. |
 | 5 | **Verifier** | Plain TypeScript, **no LLM**. It checks numbers against the sources, character limits, ad counts, citations and hype words. |
 | 6 | **Reviser** | Sends the exact failed checks back to the model and asks it to change **only those fields**. Up to 2 rounds; anything still failing is escalated to the human. |
-| 7 | **Designer** | Generates the image in a separate call. If that fails, the image prompt is kept for review. |
+| 7 | **Designer** | Generates the image in a separate call: the Gemini image model, then OpenAI, then free FLUX. If all fail, the image prompt is kept for review. |
 
 ## 4. Tech stack and models
 
@@ -94,7 +94,7 @@ flowchart LR
 | App | **Next.js 16** (App Router), **TypeScript**, React 19 |
 | AI SDK | **Vercel AI SDK v7** (`generateText` + `Output.object`) with **Zod** schemas, so the model returns typed JSON |
 | Text model | **Gemini 3.5 Flash**, falling back to Gemini 3 Flash and then Gemini 2.5 Flash |
-| Image model | **Gemini 3.1 Flash Image**, falling back to Gemini 2.5 Flash Image |
+| Image model | **Gemini 3.1 Flash Image** (paid tier) → OpenAI `gpt-image-1` (if `OPENAI_API_KEY` is set) → **FLUX via Pollinations** (free, no key). `IMAGE_PROVIDER=free` uses the free provider directly |
 | Providers | Gemini API (AI Studio key), with Vertex AI express mode as a fallback |
 | Streaming | NDJSON event stream: the UI renders each agent step live |
 | Storage | None on the server. Runs, approvals and exports live in browser localStorage |
@@ -173,14 +173,16 @@ npm run dev                    # http://localhost:3000
 | `GEMINI_API_KEY` | yes (for LIVE) | Gemini API key from Google AI Studio |
 | `GEMINI_PROVIDER` | recommended | `gemini` to use the Gemini API directly (skips Vertex) |
 | `TEXT_MODEL` | no | Override the text model order, comma-separated |
-| `IMAGE_MODEL` | no | Override the image model order, comma-separated |
+| `IMAGE_MODEL` | no | Override the Gemini image model order, comma-separated |
+| `IMAGE_PROVIDER` | no | `free` = skip paid image models and use FLUX via Pollinations (no key needed) |
+| `OPENAI_API_KEY` | no | Enables OpenAI `gpt-image-1` as an image provider |
 
 Without a key, the app runs in **DEMO** mode automatically. `.env.local` is git-ignored, so never commit keys.
 
 ## 9. Deploy to Vercel
 
 1. Go to [vercel.com/new](https://vercel.com/new) and import `techAsmita/AdPilot-Media`. The framework is detected as Next.js automatically.
-2. Under **Environment Variables**, add `GEMINI_API_KEY` and `GEMINI_PROVIDER=gemini`.
+2. Under **Environment Variables**, add `GEMINI_API_KEY`, `GEMINI_PROVIDER=gemini` and `IMAGE_PROVIDER=free` (remove the last one once paid image credits are set up).
 3. Click **Deploy**, then paste the URL at the top of this README.
 
 Note: a full live run takes about a minute. The routes set `maxDuration = 300`, which fits Vercel's free Hobby plan. Run the 5-topic **Eval** locally and commit `data/eval-results.json`; the deployed app shows those saved results.
