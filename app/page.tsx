@@ -66,7 +66,10 @@ export default function Home() {
   const toggleTheme = () => {
     const t = theme === "light" ? "dark" : "light";
     setTheme(t);
-    document.documentElement.dataset.theme = t;
+    const root = document.documentElement;
+    root.classList.add("theme-anim");
+    root.dataset.theme = t;
+    window.setTimeout(() => root.classList.remove("theme-anim"), 400);
     try { localStorage.setItem("adpilot.theme", t); } catch {}
   };
 
