@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, Download, FlaskConical, House, Library as LibraryIcon, Link2, Moon, Sun, Loader2 } from "lucide-react";
 import type { AssetKey, Flag, Pack } from "@/lib/schema";
 import { validatePack, type Validation } from "@/lib/validate";
@@ -8,6 +8,7 @@ import {
   freshSteps, streamPost, sourceNumberSet, loadRuns, saveRun, deleteRun, loadExports, saveExport, download, packToMarkdown,
   type RunState, type StepId, type StepState, type ExportRecord,
 } from "@/lib/client";
+import { applyEvent, applyStep, emptyRun } from "@/lib/run-state";
 import { LogoMark } from "./components/brand-icons";
 import { Workflow } from "./components/Workflow";
 import { Studio } from "./components/Studio";
@@ -25,10 +26,6 @@ const TEAM = [
   { name: "Radhika Asati", initial: "R", role: "Client research & testing", color: "#b45309" },
   { name: "Asmita Roy", initial: "A", role: "Agent & product", color: "var(--accent)" },
 ];
-const emptyRun = (): RunState => ({
-  id: "", at: 0, topic: "", mode: "live", facts: [], factSource: null, plan: null, news: null, packs: [], validations: [],
-  fixedByRound: [], working: null, sourceText: "", factIds: [], image: null, models: {}, done: null, approved: [],
-});
 
 export default function Home() {
   const [page, setPage] = useState<"home" | "library" | "exports">("home");
@@ -48,8 +45,6 @@ export default function Home() {
   const [runs, setRuns] = useState<RunState[]>([]);
   const [exports, setExports] = useState<ExportRecord[]>([]);
   const [toast, setToast] = useState<string | null>(null);
-  const runRef = useRef(run);
-  runRef.current = run;
 
   useEffect(() => {
     setTheme((document.documentElement.dataset.theme as "light" | "dark") || "light");
@@ -83,28 +78,19 @@ export default function Home() {
     setRunning(true); setError(null); setSteps(freshSteps()); setTab("blog"); setMode("preview"); setView("final"); setFocusFact(null); setPage("home");
     setRun({ ...emptyRun(), id, at: Date.now(), topic: q, mode: demo ? "demo" : "live" });
     try {
+      // The event reducer lives in lib/run-state.ts so it can be unit tested.
       await streamPost("/api/agent", { input: q, demo }, (e) => {
-        switch (e.type) {
-          case "meta": patch(() => ({ mode: e.mode })); break;
-          case "step": setSteps((s) => ({ ...s, [e.id]: { status: e.status, title: e.title, detail: e.detail, ms: e.ms, startedAt: e.status === "running" ? Date.now() : s[e.id as StepId].startedAt } })); break;
-          case "facts": patch(() => ({ facts: e.facts, factSource: e.source })); break;
-          case "source": patch(() => ({ sourceText: e.text, factIds: e.ids })); break;
-          case "news": patch(() => ({ news: { title: e.title, url: e.url, takeaways: e.takeaways } })); break;
-          case "plan": patch(() => ({ plan: e.plan })); break;
-          case "pack": patch((r) => { const packs = [...r.packs]; packs[e.round] = e.pack; return { packs, working: structuredClone(e.pack) }; }); break;
-          case "validation": patch((r) => { const v = [...r.validations]; v[e.round] = e.validation; return { validations: v }; }); break;
-          case "revision": patch((r) => { const f = [...r.fixedByRound]; f[e.round] = e.fixed; return { fixedByRound: f }; }); break;
-          case "image": patch(() => ({ image: { ok: e.ok, dataUrl: e.dataUrl, error: e.error } })); break;
-          case "model": patch((r) => ({ models: { ...r.models, [e.kind]: e.label } })); break;
-          case "done": patch(() => ({ done: { ms: e.ms, rounds: e.rounds, passed: e.passed, firstPassErrors: e.firstPassErrors, finalErrors: e.finalErrors } })); break;
-          case "error": setError(e.message); break;
-        }
+        if (e.type === "step") setSteps((s) => applyStep(s, e));
+        else if (e.type === "error") setError(e.message);
+        else setRun((r) => applyEvent(r, e));
       });
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      // No explicit save here: clearing `running` lets the debounced persist
+      // effect below write the finished run, which also avoids reading state
+      // through a ref during render.
       setRunning(false);
-      setTimeout(() => persist(runRef.current), 0);
     }
   }
 
@@ -120,7 +106,10 @@ export default function Home() {
   const hasRevision = run.packs.length > 1;
   const showingDraft = view === "draft" && hasRevision;
   const pack: Pack | null = showingDraft ? draft : run.working;
-  const liveValidation = useMemo(() => (run.working && run.sourceText ? validatePack(run.working, run.sourceText, run.factIds) : null), [run.working, run.sourceText, run.factIds]);
+  const liveValidation = useMemo(
+    () => (run.working && run.siteText ? validatePack(run.working, { site: run.siteText, news: run.newsText }, run.factIds) : null),
+    [run.working, run.siteText, run.newsText, run.factIds],
+  );
   const validation: Validation | null = showingDraft ? run.validations[0] : liveValidation || run.validations[run.validations.length - 1] || null;
   const flags = validation?.flags || [];
   const assetErrors = (k: AssetKey) => flags.some((f) => f.asset === k && f.severity === "error");
@@ -137,13 +126,14 @@ export default function Home() {
   }, [run.working]);
   const readOnly = showingDraft || running;
 
-  const update = (fn: (p: Pack) => void) => {
+  const update = (asset: AssetKey, fn: (p: Pack) => void) => {
     if (readOnly) return;
     setRun((r) => {
       if (!r.working) return r;
       const w = structuredClone(r.working);
       fn(w);
-      return { ...r, working: w };
+      // A reviewer approves text, not a slot: editing an asset withdraws its approval.
+      return { ...r, working: w, approved: r.approved.filter((k) => k !== asset) };
     });
   };
   // persist edits (debounced)
@@ -155,7 +145,17 @@ export default function Home() {
 
   const toggleApprove = (k: AssetKey) => {
     if (running || showingDraft) return;
-    patch((r) => ({ approved: r.approved.includes(k) ? r.approved.filter((x) => x !== k) : [...r.approved, k] }));
+    if (approved.has(k)) {
+      patch((r) => ({ approved: r.approved.filter((x) => x !== k) }));
+      return;
+    }
+    // Approval is the last gate before export, so it cannot be given to an asset
+    // the verifier still rejects.
+    if (assetErrors(k)) {
+      setToast("Fix the open errors on this asset before approving it.");
+      return;
+    }
+    patch((r) => ({ approved: [...r.approved, k] }));
   };
   const onFlag = (f: Flag) => { if (f.asset !== "pack") { setTab(f.asset); setMode("edit"); setView("final"); } };
 

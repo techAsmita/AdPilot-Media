@@ -1,7 +1,9 @@
 import { hasKey } from "@/lib/llm";
-import { research } from "@/lib/agent";
+
 export const dynamic = "force-dynamic";
+
+// Read-only: this must not spend model credits. Research is warmed by the
+// first real run instead, so simply loading the page costs nothing.
 export async function GET() {
-  if (hasKey()) research(() => {}, false).catch(() => {});
   return Response.json({ hasKey: hasKey() });
 }

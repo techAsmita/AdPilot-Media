@@ -11,6 +11,7 @@ export const LIMITS = {
   googleHeadlinesMax: 5,
   metaHeadline: 40,
   metaPrimary: 400,
+  metaDescription: 30,
 };
 
 const ids = z.array(z.string()).describe("IDs of the facts (e.g. F3) that support the claims in this asset");

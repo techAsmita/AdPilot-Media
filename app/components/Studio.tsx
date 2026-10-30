@@ -26,11 +26,13 @@ export function Studio(p: {
   showingDraft: boolean; readOnly: boolean; running: boolean;
   flags: Flag[]; assetErrors: (k: AssetKey) => boolean;
   approved: Set<string>; toggleApprove: (k: AssetKey) => void;
-  update: (fn: (p: Pack) => void) => void;
+  update: (asset: AssetKey, fn: (p: Pack) => void) => void;
   image: ImgState; regenImage: () => void;
   ctx: EvCtx; steps: Record<StepId, StepState>; error: string | null;
 }) {
   const { tab, pack } = p;
+  // Edits are attributed to the open tab so the reviewer's approval of that asset can be withdrawn.
+  const update = (fn: (pack: Pack) => void) => p.update(tab, fn);
   const flagsFor = (path: string) => p.flags.filter((f) => f.path === path);
   const assetFlags = p.flags.filter((f) => f.asset === tab);
   const cites = !pack ? [] : tab === "metaAds" ? [...new Set(pack.metaAds.flatMap((a) => a.factIds))] : tab === "googleAds" ? [...new Set(pack.googleAds.flatMap((a) => a.factIds))] : tab === "image" ? [] : (pack[tab] as { factIds: string[] }).factIds;
@@ -39,7 +41,7 @@ export function Studio(p: {
   return (
     <section className="panel studio">
       <div className="panel-h">
-        <h2>Content studio {pack && <span className="kicker" style={{ fontWeight: 400 }}>{p.approved.size}/7 approved</span>}</h2>
+        <h2>Content studio {pack && <span className="kicker" style={{ fontWeight: 400 }}>{p.approved.size}/{ASSETS.length} approved</span>}</h2>
         <p>Multi-channel content pack, powered by research and fact-checking</p>
       </div>
       <nav className="tabs" role="tablist">
@@ -68,7 +70,12 @@ export function Studio(p: {
                 <button className={p.view === "final" ? "on" : ""} onClick={() => p.setView("final")}>Revised {p.finalErrors === 0 ? <Check size={12} className="k" /> : <span className="e">{p.finalErrors}✕</span>}</button>
               </div>
             )}
-            <button className={`btn sm ${p.approved.has(tab) ? "ok" : ""}`} disabled={p.running || p.showingDraft} onClick={() => p.toggleApprove(tab)}>
+            <button
+              className={`btn sm ${p.approved.has(tab) ? "ok" : ""}`}
+              disabled={p.running || p.showingDraft || (!p.approved.has(tab) && p.assetErrors(tab))}
+              title={!p.approved.has(tab) && p.assetErrors(tab) ? "Fix the open errors on this asset before approving it" : undefined}
+              onClick={() => p.toggleApprove(tab)}
+            >
               {p.approved.has(tab) ? <><CheckCircle2 size={14} /> Approved</> : <><UserCheck size={14} /> Approve</>}
             </button>
           </div>
@@ -76,7 +83,7 @@ export function Studio(p: {
       )}
 
       <div className="stage scroll">
-        {p.error && <div className="err-box">Agent error: {p.error}{"\n\n"}Tip: switch to DEMO to show the recorded run, or check GEMINI_API_KEY in .env.local.</div>}
+        {p.error && <div className="err-box">Agent error: {p.error}{"\n\n"}Tip: switch to DEMO to show the recorded run, or check that OPENAI_API_KEY or GEMINI_API_KEY is set in .env.local.</div>}
         {!pack ? (
           <EmptyState steps={p.steps} running={p.running} />
         ) : (
@@ -87,7 +94,7 @@ export function Studio(p: {
               <div className="banner err"><CircleAlert size={15} /> {assetFlags.filter((f) => f.severity === "error").length} open error(s) on this asset — see Edit for details.</div>
             )}
             {tab === "image" ? (
-              <ImageView pack={pack} image={p.image} readOnly={p.readOnly} update={p.update} regen={p.regenImage} flags={flagsFor("image.prompt")} />
+              <ImageView pack={pack} image={p.image} readOnly={p.readOnly} update={update} regen={p.regenImage} flags={flagsFor("image.prompt")} />
             ) : p.mode === "preview" ? (
               tab === "blog" ? <BlogPreview pack={pack} img={img} ctx={p.ctx} /> :
               tab === "linkedin" ? <LinkedInPreview pack={pack} img={img} ctx={p.ctx} /> :
@@ -96,7 +103,7 @@ export function Studio(p: {
               tab === "metaAds" ? <MetaPreview pack={pack} img={img} ctx={p.ctx} /> :
               <GooglePreview pack={pack} ctx={p.ctx} />
             ) : (
-              <EditView tab={tab} pack={pack} draft={p.hasRevision && !p.showingDraft ? p.draft : null} readOnly={p.readOnly} update={p.update} flagsFor={flagsFor} />
+              <EditView tab={tab} pack={pack} draft={p.hasRevision && !p.showingDraft ? p.draft : null} readOnly={p.readOnly} update={update} flagsFor={flagsFor} />
             )}
           </>
         )}
@@ -199,7 +206,7 @@ function EditView({ tab, pack, draft, readOnly, update, flagsFor }: { tab: Asset
             <div className="group-h"><span className="angle-tag">{a.angle}</span><span className="sp-meta">Ad {i + 1} · CTA: {a.cta}</span></div>
             <Field label="Primary text" max={LIMITS.metaPrimary} value={a.primaryText} prev={draft?.metaAds[i]?.primaryText} readOnly={readOnly} flags={flagsFor(`metaAds[${i + 1}].primaryText`)} onChange={(v) => update((p) => { p.metaAds[i].primaryText = v; })} />
             <Field label="Headline" max={LIMITS.metaHeadline} value={a.headline} prev={draft?.metaAds[i]?.headline} readOnly={readOnly} flags={flagsFor(`metaAds[${i + 1}].headline`)} onChange={(v) => update((p) => { p.metaAds[i].headline = v; })} />
-            <Field label="Description" max={30} value={a.description} prev={draft?.metaAds[i]?.description} readOnly={readOnly} flags={flagsFor(`metaAds[${i + 1}].description`)} onChange={(v) => update((p) => { p.metaAds[i].description = v; })} />
+            <Field label="Description" max={LIMITS.metaDescription} value={a.description} prev={draft?.metaAds[i]?.description} readOnly={readOnly} flags={flagsFor(`metaAds[${i + 1}].description`)} onChange={(v) => update((p) => { p.metaAds[i].description = v; })} />
           </div>
         ))}
         {flagsFor("metaAds").map((f, i) => <div key={i} className={`fl ${f.severity}`}>{f.message}</div>)}

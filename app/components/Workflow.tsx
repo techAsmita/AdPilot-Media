@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import { Check } from "lucide-react";
 import type { Plan } from "@/lib/schema";
 import { STEPS, fmtMs, type StepId, type StepState } from "@/lib/client";
 
@@ -8,8 +8,8 @@ export function Workflow({ steps, plan, news, models, totalMs, running, onFact }
   steps: Record<StepId, StepState>; plan: Plan | null; news: { title: string; takeaways: string[] } | null;
   models: { text?: string; image?: string }; totalMs?: number; running: boolean; onFact: (id: string) => void;
 }) {
-  const [now, setNow] = useState(Date.now());
-  const [expanded, setExpanded] = useState(false);
+  // 0 until the ticker starts, so nothing impure runs during render.
+  const [now, setNow] = useState(0);
   useEffect(() => {
     if (!running) return;
     const t = setInterval(() => setNow(Date.now()), 200);
@@ -29,10 +29,10 @@ export function Workflow({ steps, plan, news, models, totalMs, running, onFact }
         <p>Step-by-step process run by the AdPilot agent</p>
       </div>
       <div className="panel-b scroll">
-        <ol className={`steps ${expanded ? "" : "collapsed"}`}>
+        <ol className="steps collapsed">
           {STEPS.map((s, i) => {
             const st = steps[s.id];
-            const ms = st.status === "running" && st.startedAt ? now - st.startedAt : st.ms;
+            const ms = st.status === "running" && st.startedAt && now ? now - st.startedAt : st.ms;
             return (
               <li key={s.id} className={`step ${st.status} ${s.id === focusId ? "focus" : ""}`}>
                 <span className="num">{st.status === "done" ? <Check size={14} /> : st.status === "error" ? "!" : i + 1}</span>
@@ -48,9 +48,6 @@ export function Workflow({ steps, plan, news, models, totalMs, running, onFact }
             );
           })}
         </ol>
-        <button className="btn sm hide-lg" style={{ display: "none" }} onClick={() => setExpanded((e) => !e)}>
-          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />} {expanded ? "Hide steps" : "Show all steps"}
-        </button>
         {plan && (
           <div className="planbox">
             <div><span className="kicker">Angle</span><p className="angle" style={{ marginTop: 5 }}>{plan.angle}</p></div>

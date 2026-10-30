@@ -1,5 +1,6 @@
 // Research layer: reads the AdPilot client site (live, with a snapshot fallback)
 // and any news link the user gives, and returns plain text the agent can cite.
+import { fetchTextSafely } from "./net";
 
 export const CLIENT_URL =
   process.env.CLIENT_URL || "https://fde-client-company-demos.aaryanptl.chatgpt.site/adpilot-media";
@@ -46,33 +47,23 @@ const decode = (s: string) =>
     .replace(/&#8377;|&#x20b9;/gi, "₹")
     .replace(/&[a-z]+;/gi, " ");
 
+// The URL may come straight from the user, so the request goes through
+// fetchTextSafely: public hosts only, re-checked on every redirect, body capped.
 export async function fetchPageText(url: string, timeoutMs = 12000) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      headers: { "User-Agent": "Mozilla/5.0 (AdPilot-Content-Agent; research bot)" },
-      redirect: "follow",
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const html = await res.text();
-    const title = decode((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "").trim());
-    const body = html
-      .replace(/<(script|style|noscript|svg|nav|footer|header|form)[\s\S]*?<\/\1>/gi, " ")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/(p|div|h[1-6]|li|section|article)>/gi, "\n")
-      .replace(/<[^>]+>/g, " ");
-    const text = decode(body)
-      .split("\n")
-      .map((l) => l.replace(/\s+/g, " ").trim())
-      .filter((l) => l.length > 2)
-      .join("\n");
-    if (text.length < 200) throw new Error("page had too little readable text");
-    return { title, text: text.slice(0, 12000) };
-  } finally {
-    clearTimeout(t);
-  }
+  const { text: html } = await fetchTextSafely(url, { timeoutMs });
+  const title = decode((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "").trim());
+  const body = html
+    .replace(/<(script|style|noscript|svg|nav|footer|header|form)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|h[1-6]|li|section|article)>/gi, "\n")
+    .replace(/<[^>]+>/g, " ");
+  const text = decode(body)
+    .split("\n")
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter((l) => l.length > 2)
+    .join("\n");
+  if (text.length < 200) throw new Error("page had too little readable text");
+  return { title, text: text.slice(0, 12000) };
 }
 
 export const isUrl = (s: string) => /^https?:\/\/\S+$/i.test(s.trim());
@@ -83,8 +74,11 @@ export function rankFacts(facts: Fact[], query: string, k = 6) {
   const q = query.toLowerCase().split(/[^a-z0-9₹]+/).filter((w) => w.length > 2 && !STOP.has(w));
   return facts
     .map((f) => {
-      const t = f.text.toLowerCase();
-      const score = q.reduce((s, w) => s + (t.includes(w) ? 1 : 0), 0) + (f.category === "result" ? 0.5 : 0);
+      // Prefix match at word boundaries: "clinic" still scores against "clinics",
+      // but "all" no longer scores against "call tracking" the way a bare
+      // substring test did.
+      const factWords = f.text.toLowerCase().split(/[^a-z0-9₹]+/).filter(Boolean);
+      const score = q.reduce((s, w) => s + (factWords.some((fw) => fw.startsWith(w)) ? 1 : 0), 0) + (f.category === "result" ? 0.5 : 0);
       return { f, score };
     })
     .sort((a, b) => b.score - a.score)

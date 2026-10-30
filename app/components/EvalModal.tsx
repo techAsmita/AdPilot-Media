@@ -2,9 +2,7 @@
 import { useEffect, useState } from "react";
 import { FlaskConical, X } from "lucide-react";
 import { streamPost } from "@/lib/client";
-
-type Row = { topic: string; firstPassErrors: number | null; finalErrors: number | null; rounds: number; passed: boolean; flags: string[]; ms: number };
-type Summary = { demo: boolean; at: string; rows: Row[]; firstPassRate: number; finalPassRate: number; errorsCaught: number; errorsFixed: number };
+import type { EvalEvent, EvalRow as Row, EvalSummary as Summary } from "@/lib/events";
 
 export function EvalModal({ demo, onClose }: { demo: boolean; onClose: () => void }) {
   const [rows, setRows] = useState<(Row | null)[]>([]);
@@ -21,7 +19,7 @@ export function EvalModal({ demo, onClose }: { demo: boolean; onClose: () => voi
 
   async function start() {
     setRunning(true); setSummary(null); setRows([null, null, null, null, null]); setIsDemo(demo);
-    await streamPost("/api/eval", { demo }, (e) => {
+    await streamPost<EvalEvent>("/api/eval", { demo }, (e) => {
       if (e.type === "eval-start") setIsDemo(e.demo);
       if (e.type === "eval-running") setCurrent(e.index);
       if (e.type === "eval-row") setRows((r) => { const n = [...r]; n[e.index] = e.row; return n; });

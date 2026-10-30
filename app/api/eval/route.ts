@@ -4,6 +4,8 @@ import path from "path";
 import { runAgent } from "@/lib/agent";
 import { hasKey } from "@/lib/llm";
 import { ndjson } from "@/lib/stream";
+import { checkRate, spendBudget, tooMany } from "@/lib/ratelimit";
+import type { EvalRow, EvalSummary } from "@/lib/events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,9 +30,17 @@ const SAMPLE = [
   { first: 2, final: 1, rounds: 2, flags: ["Unsupported number \"2\" (kept after 2 rounds)", "Google description 94 chars"] },
 ];
 
+// The filesystem is read-only on most hosts, so the last result is kept in memory
+// as the primary store and the file is only a best-effort cache for local dev.
+let lastSummary: EvalSummary | null = null;
+let inFlight = false;
+
 export async function GET() {
+  if (lastSummary) return Response.json(lastSummary);
   try {
-    return Response.json(JSON.parse(await fs.readFile(FILE, "utf8")));
+    const fromDisk = JSON.parse(await fs.readFile(FILE, "utf8"));
+    lastSummary = fromDisk;
+    return Response.json(fromDisk);
   } catch {
     return Response.json(null);
   }
@@ -39,21 +49,34 @@ export async function GET() {
 export async function POST(req: Request) {
   const { demo = false } = await req.json().catch(() => ({}));
   const isDemo = !!demo || !hasKey();
+
+  // One POST here is EVAL_TOPICS.length full agent runs, so it is the most
+  // expensive route in the app and gets the tightest limit.
+  const rate = checkRate("eval", req);
+  if (!rate.ok) return tooMany("An evaluation was run recently. Wait a few minutes and try again.", rate.retryAfter);
+
+  if (inFlight) return tooMany("An evaluation is already running. Wait for it to finish.");
+
+  if (!isDemo && !spendBudget(EVAL_TOPICS.length).ok)
+    return tooMany("The daily run budget for this deployment is used up. Run the evaluation in DEMO mode or try again tomorrow.");
+
+  inFlight = true;
   return ndjson(async (send) => {
-    const rows: Record<string, unknown>[] = [];
+   try {
+    const rows: EvalRow[] = [];
     send({ type: "eval-start", total: EVAL_TOPICS.length, demo: isDemo });
     for (let i = 0; i < EVAL_TOPICS.length; i++) {
       const topic = EVAL_TOPICS[i];
       send({ type: "eval-running", index: i, topic });
       const t = Date.now();
-      let row: Record<string, unknown>;
+      let row: EvalRow;
       if (isDemo) {
         await new Promise((r) => setTimeout(r, 900));
         const s = SAMPLE[i];
         row = { topic, firstPassErrors: s.first, finalErrors: s.final, rounds: s.rounds, passed: s.final === 0, flags: s.flags, ms: 0 };
       } else {
         const flags: string[] = [];
-        const res = await runAgent(topic, { demo: false, withImage: false }, (e) => {
+        const res = await runAgent(topic, { demo: false, withImage: false, signal: req.signal }, (e) => {
           if (e.type === "validation" && e.round === 0)
             e.validation.flags.filter((f) => f.severity === "error").forEach((f) => flags.push(`${f.path}: ${f.message}`));
         });
@@ -65,7 +88,7 @@ export async function POST(req: Request) {
       send({ type: "eval-row", index: i, row });
     }
     const n = rows.length;
-    const summary = {
+    const summary: EvalSummary = {
       demo: isDemo,
       at: new Date().toISOString(),
       rows,
@@ -74,7 +97,13 @@ export async function POST(req: Request) {
       errorsCaught: rows.reduce((s, r) => s + (Number(r.firstPassErrors) || 0), 0),
       errorsFixed: rows.reduce((s, r) => s + ((Number(r.firstPassErrors) || 0) - (Number(r.finalErrors) || 0)), 0),
     };
-    if (!isDemo) await fs.mkdir(path.dirname(FILE), { recursive: true }).then(() => fs.writeFile(FILE, JSON.stringify(summary, null, 2))).catch(() => {});
+    if (!isDemo) {
+      lastSummary = summary;
+      await fs.mkdir(path.dirname(FILE), { recursive: true }).then(() => fs.writeFile(FILE, JSON.stringify(summary, null, 2))).catch(() => {});
+    }
     send({ type: "eval-done", summary });
+   } finally {
+    inFlight = false;
+   }
   });
 }

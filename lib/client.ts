@@ -1,10 +1,12 @@
 // Browser-side helpers shared by the UI: streaming, evidence linking, run storage.
-import type { Pack, Plan } from "./schema";
+import { ASSETS, type Pack, type Plan } from "./schema";
 import type { Validation } from "./validate";
 import type { Fact } from "./sources";
+import { NUMBER_TOKEN, normalizeNumber, numberValueSet } from "./numbers";
+import type { AgentEvent, StepId, StepStatus } from "./events";
 
-export type StepId = "research" | "news" | "plan" | "generate" | "validate" | "revise" | "image";
-export type StepStatus = "pending" | "running" | "done" | "error" | "skipped";
+// Re-exported so the components keep importing step types from one place.
+export type { StepId, StepStatus };
 export type StepState = { status: StepStatus; title: string; detail?: string; ms?: number; startedAt?: number };
 
 export const STEPS: { id: StepId; agent: string; title: string; hint: string }[] = [
@@ -34,6 +36,9 @@ export type RunState = {
   fixedByRound: string[][];
   working: Pack | null;
   sourceText: string;
+  // Kept apart so a re-check after an edit tiers evidence the same way the agent did.
+  siteText: string;
+  newsText: string;
   factIds: string[];
   image: { ok: boolean; dataUrl?: string; error?: string; loading?: boolean } | null;
   models: { text?: string; image?: string };
@@ -41,35 +46,56 @@ export type RunState = {
   approved: string[];
 };
 
-export async function streamPost(url: string, body: unknown, onEvent: (e: any) => void) {
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (!res.body) throw new Error(`HTTP ${res.status}`);
+export async function streamPost<E = AgentEvent>(url: string, body: unknown, onEvent: (e: E) => void, signal?: AbortSignal) {
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
+  // An error response has a body too, so its JSON would otherwise be parsed as an
+  // event with no "type" and silently dropped.
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const j = await res.json();
+      if (j?.error) message = String(j.error);
+    } catch {
+      /* non-JSON error body: keep the status */
+    }
+    throw new Error(message);
+  }
+  if (!res.body) throw new Error("The server sent no response body.");
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = "";
+  const flush = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    try {
+      onEvent(JSON.parse(trimmed));
+    } catch {
+      /* a truncated final line is not worth failing the whole run over */
+    }
+  };
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
     buf += dec.decode(value, { stream: true });
     let i;
     while ((i = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, i).trim();
+      flush(buf.slice(0, i));
       buf = buf.slice(i + 1);
-      if (line) onEvent(JSON.parse(line));
     }
   }
+  buf += dec.decode();
+  flush(buf);
 }
 
 export const fmtMs = (ms?: number) => (ms == null ? "" : ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`);
-export const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+export { words } from "./text";
 
 /* ---------- evidence linking ---------- */
-// Display tokens: ₹420, 3.4, 31%, 3x, 1.2 cr … but not the 2 in "D2C".
-export const DISPLAY_NUM = /(?<![A-Za-z0-9.])₹?\d[\d,]*(?:\.\d+)?(?:%|x|×)?(?![A-Za-z]{2,}|\d)/g;
-export const normNum = (tok: string) => {
-  const n = tok.replace(/[₹,%x×]/g, "");
-  return n.includes(".") ? String(parseFloat(n)) : String(parseInt(n, 10));
-};
+// The tokenizer lives in lib/numbers.ts and is shared with the verifier, so the
+// highlighting can never disagree with the flags. Re-exported under the old names
+// for the preview components.
+export const DISPLAY_NUM = NUMBER_TOKEN;
+export const normNum = normalizeNumber;
 
 export type Evidence = { kind: "fact"; fact: Fact } | { kind: "site" } | { kind: "none" };
 
@@ -81,9 +107,7 @@ export function evidenceFor(token: string, facts: Fact[], sourceNums: Set<string
   return { kind: "none" };
 }
 
-export function sourceNumberSet(text: string) {
-  return new Set((text.replace(/\b\d+\s*\/\s*\d+\b/g, " ").match(DISPLAY_NUM) || []).map(normNum));
-}
+export const sourceNumberSet = numberValueSet;
 
 /* ---------- local storage (best-effort) ---------- */
 const RUNS = "adpilot.runs.v1";
@@ -129,7 +153,7 @@ export function packToMarkdown(run: RunState) {
   return [
     `# AdPilot content pack — ${run.topic}`,
     `Generated ${new Date(run.at).toLocaleString()} · ${run.mode === "live" ? run.models.text || "Gemini" : "demo run"}`,
-    `Reviewer approved ${run.approved.length}/7 assets. Nothing has been published.`,
+    `Reviewer approved ${run.approved.length}/${ASSETS.length} assets. Nothing has been published.`,
     `\n## Blog: ${p.blog.title}\n\n${p.blog.body}`,
     `\n## LinkedIn\n\n${p.linkedin.post}`,
     `\n## X thread\n\n${p.xThread.posts.join("\n\n")}`,

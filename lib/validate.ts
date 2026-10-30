@@ -1,25 +1,55 @@
 // Deterministic checks. No LLM. Returns flags; never edits the pack.
 import { LIMITS, type Flag, type Pack } from "./schema";
+import { extractNumberTokens, extractNumbers, numberUnitSet, numberValueSet, UNIT_NAME } from "./numbers";
+import { words } from "./text";
 
-const NUM_RE = /(?<![A-Za-z0-9.])\d[\d,]*(?:\.\d+)?(?![A-Za-z]{2,}|\d)/g;
+// Re-exported so callers (and the tests) have one import site for number handling.
+export { extractNumbers };
 
-export function extractNumbers(text: string): string[] {
-  const cleaned = text
-    .replace(/\b\d+\s*\/\s*\d+\b/g, " ") // thread counters like 1/5
-    .replace(/#[\w]+/g, " "); // hashtags
-  return (cleaned.match(NUM_RE) || [])
-    .map((n) => n.replace(/,/g, ""))
-    .map((n) => (n.includes(".") ? String(parseFloat(n)) : String(parseInt(n, 10))))
-    .filter((n) => n !== "NaN");
+export type Sources = { site: string; news?: string };
+
+// Hype and absolute-promise language. Checked pattern by pattern so each flag can
+// name what it matched; text is NFKC-normalised first so "×" and fullwidth digits
+// cannot slip past.
+const HYPE: RegExp[] = [
+  /\bguarantee(?:s|d|ing)?\b/i,
+  /\bassured?\b/i,
+  /\bskyrocket\w*/i,
+  /\bexplod(?:e|es|ing)\b|\bexplosive\b/i,
+  /\bexponential\w*/i,
+  /\d+\s*[x×]\s*(?:roi|roas|returns?|growth|results?|sales)\b/i,
+  /\b10\s*[x×]\b/i,
+  /(?:^|[^\w#])#\s*1(?!\d)/,
+  /\bno\.?\s*1\b|\bnumber one\b/i,
+  /\bbest agency\b/i,
+  /\bovernight\b/i,
+  /\brisk[-\s]?free\b/i,
+  /\bunbeatable\b|\bmiracle\b/i,
+  /\binstant(?:ly|aneous)?\b/i,
+];
+
+function hypeHit(text: string): string | null {
+  const t = text.normalize("NFKC");
+  for (const re of HYPE) {
+    const m = t.match(re);
+    if (m) return m[0].trim();
+  }
+  return null;
 }
 
-const HYPE = /\b(guarantee[ds]?|guaranteed|skyrocket\w*|explode\w*|10x|best agency|#1|number one|overnight)\b/i;
+// The brief's default call to action: the free 30-minute ad account audit.
+const CTA = /\bfree\b[^.!?]{0,60}\baudit\b|\baudit\b[^.!?]{0,30}\bfree\b/i;
 
-const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
-
-export function validatePack(pack: Pack, sourceText: string, factIds: string[]) {
+export function validatePack(pack: Pack, sources: Sources, factIds: string[]) {
+  const site = sources.site || "";
+  const news = sources.news || "";
   const flags: Flag[] = [];
-  const allowed = new Set(extractNumbers(sourceText));
+  // Two tiers: AdPilot's own site proves a claim outright, while the linked article
+  // only supports it as attributed industry context.
+  const siteValues = numberValueSet(site);
+  const newsValues = numberValueSet(news);
+  const allowed = new Set([...siteValues, ...newsValues]);
+  const allowedUnits = new Set([...numberUnitSet(site), ...numberUnitSet(news)]);
   const known = new Set(factIds);
   const add = (f: Flag) => flags.push(f);
 
@@ -41,16 +71,24 @@ export function validatePack(pack: Pack, sourceText: string, factIds: string[]) 
     ]),
   ];
 
-  // 1. Every number must exist in the researched sources.
+  // 1. Every number must exist in the researched sources, with the same unit.
   let numbersChecked = 0;
   for (const f of fields) {
-    for (const n of extractNumbers(f.text)) {
+    for (const { token, value, unit } of extractNumberTokens(f.text)) {
       numbersChecked++;
-      if (!allowed.has(n))
-        add({ severity: "error", asset: f.asset, path: f.path, message: `Unsupported number "${n}" — not found in AdPilot's site or the source article` });
+      if (!allowed.has(value)) {
+        add({ severity: "error", asset: f.asset, path: f.path, message: `Unsupported number "${token}" — not found in AdPilot's site or the source article` });
+        continue;
+      }
+      if (unit && !allowedUnits.has(unit + value)) {
+        add({ severity: "error", asset: f.asset, path: f.path, message: `"${token}" is not supported as ${UNIT_NAME[unit]} — the sources mention ${value}, but not with that unit` });
+        continue;
+      }
+      if (!siteValues.has(value) && newsValues.has(value))
+        add({ severity: "warning", asset: f.asset, path: f.path, message: `"${token}" comes from the linked article, not AdPilot's site — keep it attributed` });
     }
-    if (HYPE.test(f.text))
-      add({ severity: "error", asset: f.asset, path: f.path, message: `Hype / guarantee language: "${f.text.match(HYPE)![0]}"` });
+    const hype = hypeHit(f.text);
+    if (hype) add({ severity: "error", asset: f.asset, path: f.path, message: `Hype / guarantee language: "${hype}"` });
   }
 
   // 2. Counts and character limits.
@@ -67,11 +105,15 @@ export function validatePack(pack: Pack, sourceText: string, factIds: string[]) 
   const angles = new Set(pack.metaAds.map((a) => a.angle));
   if (angles.size < Math.min(3, pack.metaAds.length))
     add({ severity: "warning", asset: "metaAds", path: "metaAds", message: "Meta ads repeat an angle — want proof, offer and pain" });
+  // Meta truncates rather than rejecting, but a truncated headline is still a broken
+  // asset, so these are errors — that way the revise loop actually fixes them.
   pack.metaAds.forEach((a, i) => {
     if (a.headline.length > LIMITS.metaHeadline)
-      add({ severity: "warning", asset: "metaAds", path: `metaAds[${i + 1}].headline`, message: `Headline is ${a.headline.length} chars (recommended ≤ ${LIMITS.metaHeadline})` });
+      add({ severity: "error", asset: "metaAds", path: `metaAds[${i + 1}].headline`, message: `Headline is ${a.headline.length} chars (max ${LIMITS.metaHeadline})` });
     if (a.primaryText.length > LIMITS.metaPrimary)
-      add({ severity: "warning", asset: "metaAds", path: `metaAds[${i + 1}].primaryText`, message: `Primary text is ${a.primaryText.length} chars (recommended ≤ ${LIMITS.metaPrimary})` });
+      add({ severity: "error", asset: "metaAds", path: `metaAds[${i + 1}].primaryText`, message: `Primary text is ${a.primaryText.length} chars (max ${LIMITS.metaPrimary})` });
+    if (a.description.length > LIMITS.metaDescription)
+      add({ severity: "error", asset: "metaAds", path: `metaAds[${i + 1}].description`, message: `Description is ${a.description.length} chars (max ${LIMITS.metaDescription})` });
   });
 
   if (pack.googleAds.length !== 3)
@@ -91,9 +133,11 @@ export function validatePack(pack: Pack, sourceText: string, factIds: string[]) 
     });
   });
 
-  // 3. Length guidance (warnings).
+  // 3. Length and brief guidance (warnings).
   const bw = words(pack.blog.body);
   if (bw < 250 || bw > 450) add({ severity: "warning", asset: "blog", path: "blog.body", message: `Blog is ${bw} words (target 300–400)` });
+  if (!CTA.test(pack.blog.body.slice(-600)))
+    add({ severity: "warning", asset: "blog", path: "blog.body", message: "Blog does not end with the free ad account audit CTA" });
   const lw = words(pack.linkedin.post);
   if (lw < 90 || lw > 220) add({ severity: "warning", asset: "linkedin", path: "linkedin.post", message: `LinkedIn post is ${lw} words (target 120–180)` });
   const hc = pack.instagram.hashtags.length;

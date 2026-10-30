@@ -24,7 +24,8 @@ export function Quality(p: {
   const othErr = otherFlags.filter((f) => f.severity === "error").length;
   const othWarn = otherFlags.length - othErr;
   const first = p.validations[0];
-  const allApproved = p.approved.size === 7;
+  const total = ASSETS.length;
+  const allApproved = p.approved.size === total;
 
   // jump to a fact when a number or chip is clicked anywhere in the app
   useEffect(() => {
@@ -129,15 +130,21 @@ export function Quality(p: {
             <span className="qic"><UserCheck size={18} /></span>
             <div>
               <div className="qt">Human review <span className="muted" style={{ fontWeight: 400 }}>(required)</span></div>
-              <div className="qd">Nothing is published or sent. The agent has no publish permission — every asset needs your approval.</div>
+              <div className="qd">Nothing is published or sent. The agent has no publish permission — every asset needs your approval, an asset with open errors cannot be approved, and editing one withdraws its approval.</div>
             </div>
-            <span className="mono" style={{ fontSize: 13, paddingTop: 2 }}>{p.approved.size} / 7</span>
+            <span className="mono" style={{ fontSize: 13, paddingTop: 2 }}>{p.approved.size} / {total}</span>
           </div>
-          <div style={{ padding: "0 14px" }}><div className="prog"><i style={{ width: `${(p.approved.size / 7) * 100}%` }} /></div></div>
+          <div style={{ padding: "0 14px" }}><div className="prog"><i style={{ width: `${(p.approved.size / total) * 100}%` }} /></div></div>
           {p.hasPack && (
             <div className="approvals">
               {ASSETS.map((a) => (
-                <button key={a.key} className={`appr ${p.approved.has(a.key) ? "on" : ""}`} disabled={p.running || p.showingDraft} onClick={() => p.toggleApprove(a.key)}>
+                <button
+                  key={a.key}
+                  className={`appr ${p.approved.has(a.key) ? "on" : ""}`}
+                  disabled={p.running || p.showingDraft || (!p.approved.has(a.key) && p.assetErrors(a.key))}
+                  title={!p.approved.has(a.key) && p.assetErrors(a.key) ? "Fix the open errors on this asset before approving it" : undefined}
+                  onClick={() => p.toggleApprove(a.key)}
+                >
                   <span className="box">{p.approved.has(a.key) && <Check size={12} strokeWidth={3} />}</span>
                   {a.label}
                   {p.assetErrors(a.key) && <span className="err-n">has errors</span>}

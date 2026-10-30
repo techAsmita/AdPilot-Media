@@ -134,6 +134,18 @@ Want to know what your boosts are really returning? Free 30-minute ad account au
   },
 };
 
+/**
+ * What is deliberately wrong in MOCK_DRAFT, so the revise loop has real work and
+ * the demo shows real failure types. The test suite asserts against this list
+ * rather than a bare count, so editing the demo copy above means editing this
+ * list — not hunting a mystery assertion.
+ */
+export const PLANTED_DEFECTS: { path: string; expect: RegExp; why: string }[] = [
+  { path: "linkedin.post", expect: /Unsupported number "40%"/, why: "invented stat: 'lose up to 40% of their ad budget'" },
+  { path: "metaAds[3].primaryText", expect: /Unsupported number "60%"/, why: "invented stat: 'waste 60% of their spend'" },
+  { path: "googleAds[1].headline 2", expect: /36 chars \(max 30\)/, why: "Google headline overruns the 30-char limit" },
+];
+
 export const MOCK_REVISED: Pack = structuredClone(MOCK_DRAFT);
 MOCK_REVISED.linkedin.post = MOCK_DRAFT.linkedin.post.replace(
   "Most D2C brands lose up to 40% of their ad budget on boosted posts.",
