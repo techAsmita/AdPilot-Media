@@ -1,6 +1,7 @@
 import { makeImage } from "@/lib/image";
 import { hasKey } from "@/lib/llm";
 import { checkRate, spendBudget, tooMany } from "@/lib/ratelimit";
+import { makeLog } from "@/lib/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,8 @@ export async function POST(req: Request) {
   if (!isDemo && !spendBudget(1).ok)
     return tooMany("The daily run budget for this deployment is used up. Switch to DEMO mode or try again tomorrow.");
 
-  const img = await makeImage(String(prompt).slice(0, 4000), String(aspectRatio), isDemo, undefined, req.signal);
+  const log = makeLog();
+  const img = await makeImage(String(prompt).slice(0, 4000), String(aspectRatio), isDemo, undefined, req.signal, log);
+  if (!img.ok) log.error("image.route_failed", { detail: img.error?.slice(0, 200) });
   return Response.json({ ...img, prompt });
 }

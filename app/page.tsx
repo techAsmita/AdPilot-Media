@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { ArrowRight, Download, FlaskConical, House, Library as LibraryIcon, Link2, Moon, Sun, Loader2 } from "lucide-react";
 import type { AssetKey, Flag, Pack } from "@/lib/schema";
 import { validatePack, type Validation } from "@/lib/validate";
@@ -45,6 +45,8 @@ export default function Home() {
   const [runs, setRuns] = useState<RunState[]>([]);
   const [exports, setExports] = useState<ExportRecord[]>([]);
   const [toast, setToast] = useState<string | null>(null);
+  // Lets the reviewer stop a run instead of paying for it to finish.
+  const [abort, setAbort] = useState<AbortController | null>(null);
 
   useEffect(() => {
     setTheme((document.documentElement.dataset.theme as "light" | "dark") || "light");
@@ -61,6 +63,13 @@ export default function Home() {
   const toggleTheme = () => {
     const t = theme === "light" ? "dark" : "light";
     setTheme(t);
+    // Remembered across visits; the inline script in layout.tsx reads it back
+    // before first paint.
+    try {
+      localStorage.setItem("adpilot.theme", t);
+    } catch {
+      /* private mode / blocked storage: the toggle still works for this visit */
+    }
     const root = document.documentElement;
     root.classList.add("theme-anim");
     root.dataset.theme = t;
@@ -77,20 +86,47 @@ export default function Home() {
     const id = Date.now().toString(36);
     setRunning(true); setError(null); setSteps(freshSteps()); setTab("blog"); setMode("preview"); setView("final"); setFocusFact(null); setPage("home");
     setRun({ ...emptyRun(), id, at: Date.now(), topic: q, mode: demo ? "demo" : "live" });
+    const ctrl = new AbortController();
+    setAbort(ctrl);
     try {
       // The event reducer lives in lib/run-state.ts so it can be unit tested.
       await streamPost("/api/agent", { input: q, demo }, (e) => {
         if (e.type === "step") setSteps((s) => applyStep(s, e));
         else if (e.type === "error") setError(e.message);
         else setRun((r) => applyEvent(r, e));
-      });
+      }, ctrl.signal);
     } catch (e) {
-      setError((e as Error).message);
+      // An abort is the reviewer's own doing, not a failure to report.
+      if ((e as Error).name === "AbortError" || ctrl.signal.aborted) setToast("Run stopped.");
+      else setError((e as Error).message);
     } finally {
+      setAbort(null);
       // No explicit save here: clearing `running` lets the debounced persist
       // effect below write the finished run, which also avoids reading state
       // through a ref during render.
       setRunning(false);
+    }
+  }
+
+  // Regenerating one channel re-opens it for review, so its approval is withdrawn.
+  const [regenning, setRegenning] = useState<AssetKey | null>(null);
+  async function regenAsset(asset: AssetKey) {
+    if (!run.working || !run.plan || running) return;
+    setRegenning(asset);
+    try {
+      const res = await fetch("/api/asset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ asset, pack: run.working, plan: run.plan, facts: run.facts, demo: run.mode === "demo" }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.pack) throw new Error(j.error || `HTTP ${res.status}`);
+      setRun((r) => ({ ...r, working: j.pack, approved: r.approved.filter((k) => k !== asset) }));
+      setToast(`Rewrote ${asset}. Re-check and approve it.`);
+    } catch (e) {
+      setToast(`Could not rewrite that asset. ${(e as Error).message}`);
+    } finally {
+      setRegenning(null);
     }
   }
 
@@ -106,9 +142,12 @@ export default function Home() {
   const hasRevision = run.packs.length > 1;
   const showingDraft = view === "draft" && hasRevision;
   const pack: Pack | null = showingDraft ? draft : run.working;
+  // Re-validating the whole pack on every keystroke is wasted work. useDeferredValue
+  // lets React keep typing responsive and run the check on the settled value.
+  const deferredWorking = useDeferredValue(run.working);
   const liveValidation = useMemo(
-    () => (run.working && run.siteText ? validatePack(run.working, { site: run.siteText, news: run.newsText }, run.factIds) : null),
-    [run.working, run.siteText, run.newsText, run.factIds],
+    () => (deferredWorking && run.siteText ? validatePack(deferredWorking, { site: run.siteText, news: run.newsText }, run.factIds) : null),
+    [deferredWorking, run.siteText, run.newsText, run.factIds],
   );
   const validation: Validation | null = showingDraft ? run.validations[0] : liveValidation || run.validations[run.validations.length - 1] || null;
   const flags = validation?.flags || [];
@@ -130,7 +169,8 @@ export default function Home() {
     if (readOnly) return;
     setRun((r) => {
       if (!r.working) return r;
-      const w = structuredClone(r.working);
+      // Clone only the asset being edited, not all eleven, on every keystroke.
+      const w = { ...r.working, [asset]: structuredClone(r.working[asset]) } as Pack;
       fn(w);
       // A reviewer approves text, not a slot: editing an asset withdraws its approval.
       return { ...r, working: w, approved: r.approved.filter((k) => k !== asset) };
@@ -227,9 +267,15 @@ export default function Home() {
                   <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !running && input.trim() && start()} placeholder="Enter a topic or paste a news URL…" disabled={running} />
                   {isNews && <span className="tag">NEWS LINK</span>}
                 </label>
-                <button className="run" onClick={() => start()} disabled={running || !input.trim()} title={!input.trim() ? "Type a topic or paste a news link first" : undefined}>
-                  {running ? <><Loader2 size={17} className="spin" style={{ animation: "spin 0.8s linear infinite" }} /> Running</> : <>Run agent <ArrowRight size={17} /></>}
-                </button>
+                {running ? (
+                  <button className="run" onClick={() => abort?.abort()} title="Stop this run">
+                    <Loader2 size={17} className="spin" style={{ animation: "spin 0.8s linear infinite" }} /> Stop
+                  </button>
+                ) : (
+                  <button className="run" onClick={() => start()} disabled={!input.trim()} title={!input.trim() ? "Type a topic or paste a news link first" : undefined}>
+                    Run agent <ArrowRight size={17} />
+                  </button>
+                )}
               </div>
               <div className="examples">
                 <span>Try an example:</span>
@@ -249,6 +295,7 @@ export default function Home() {
               fixedCount={run.fixedByRound.flat().length} showingDraft={showingDraft} readOnly={readOnly} running={running}
               flags={flags} assetErrors={assetErrors} approved={approved} toggleApprove={toggleApprove} update={update}
               image={run.image} regenImage={regenImage} ctx={ctx} steps={steps} error={error}
+              regenAsset={regenAsset} regenning={regenning} canRegen={!!run.plan}
             />
             <Quality
               validation={validation} validations={run.validations} liveErrors={liveValidation?.errors ?? null}

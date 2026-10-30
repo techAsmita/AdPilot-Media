@@ -8,6 +8,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createGoogleVertex } from "@ai-sdk/google-vertex";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
+import { rootLog, type Log } from "./log";
 
 type Provider = "gemini" | "vertex" | "openai";
 type Combo = { provider: Provider; model: string };
@@ -100,7 +101,7 @@ const CHAIN_DEADLINE_MS = Number(process.env.MODEL_DEADLINE_MS || 120_000);
 const ATTEMPT_CAP_MS = Number(process.env.MODEL_ATTEMPT_MS || 60_000);
 const MIN_ATTEMPT_MS = 5_000;
 
-export type WithModelOpts = { deadlineMs?: number; signal?: AbortSignal };
+export type WithModelOpts = { deadlineMs?: number; signal?: AbortSignal; log?: Log };
 
 export async function withModel<T>(
   kind: Kind,
@@ -139,13 +140,14 @@ export async function withModel<T>(
       try {
         const result = await fn(build(c), label(c), signal);
         cache[kind] = c;
+        (opts.log ?? rootLog).info("model.ok", { kind, model: label(c) });
         return { result, modelLabel: label(c) };
       } catch (err) {
         if (opts.signal?.aborted) throw new Error("cancelled");
         const msg = (err as Error)?.message || String(err);
-        console.error(`[model] ${label(c)} failed:`, msg);
+        (opts.log ?? rootLog).error("model.failed", { model: label(c), attempt, msg: msg.slice(0, 200) });
         if (attempt === 0 && isTransient(err) && deadline - Date.now() > MIN_ATTEMPT_MS * 2) {
-          console.error(`[model] retrying ${label(c)} once after a transient error`);
+          (opts.log ?? rootLog).warn("model.retry", { model: label(c), reason: "transient" });
           continue;
         }
         errors.push(`${label(c)}: ${msg.slice(0, 160)}`);

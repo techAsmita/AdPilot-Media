@@ -46,8 +46,8 @@ export function Quality(p: {
       <div className="panel-b scroll">
         {/* 1. Factual verification */}
         <div className={`qcard ${open === "facts" ? "open" : ""}`}>
-          <button className="qh" onClick={() => toggle("facts")}>
-            <span className={`qic ${tone(numErr)}`}><ShieldCheck size={18} /></span>
+          <button className="qh" type="button" onClick={() => toggle("facts")} aria-expanded={open === "facts"} aria-controls="q-facts">
+            <span className={`qic ${tone(numErr)}`} aria-hidden="true"><ShieldCheck size={18} /></span>
             <div>
               <div className="qt">Factual verification</div>
               <div className="qd">Every number must exist in AdPilot&apos;s site or the source article. Click any highlighted number to see its source.</div>
@@ -61,7 +61,7 @@ export function Quality(p: {
             <ChevronRight size={18} className="chev" />
           </button>
           {open === "facts" && (
-            <div className="qbody scroll">
+            <div className="qbody scroll" id="q-facts">
               {numberFlags.map((f, i) => <FlagRow key={"n" + i} f={f} onClick={() => p.onFlag(f)} />)}
               {p.facts.length === 0 && <p className="qd" style={{ padding: "10px 0" }}>Facts appear once the Researcher reads the client site.</p>}
               {p.facts.map((f) => (
@@ -77,8 +77,8 @@ export function Quality(p: {
 
         {/* 2. Platform compliance */}
         <div className={`qcard ${open === "compliance" ? "open" : ""}`}>
-          <button className="qh" onClick={() => toggle("compliance")}>
-            <span className={`qic ${tone(othErr, othWarn)}`}><FileCheck2 size={18} /></span>
+          <button className="qh" type="button" onClick={() => toggle("compliance")} aria-expanded={open === "compliance"} aria-controls="q-compliance">
+            <span className={`qic ${tone(othErr, othWarn)}`} aria-hidden="true"><FileCheck2 size={18} /></span>
             <div>
               <div className="qt">Platform compliance</div>
               <div className="qd">X 280 chars · Google 30/90 chars · exactly 3 Meta + 3 Google ads · distinct ad angles · no hype or guarantees.</div>
@@ -87,7 +87,7 @@ export function Quality(p: {
             <ChevronRight size={18} className="chev" />
           </button>
           {open === "compliance" && (
-            <div className="qbody scroll">
+            <div className="qbody scroll" id="q-compliance">
               {otherFlags.length === 0 ? <p className="qd" style={{ padding: "10px 0" }}>{v ? "All platform rules pass." : "Runs after the draft is written."}</p> : otherFlags.map((f, i) => <FlagRow key={i} f={f} onClick={() => p.onFlag(f)} />)}
             </div>
           )}
@@ -95,8 +95,8 @@ export function Quality(p: {
 
         {/* 3. Revision status */}
         <div className={`qcard ${open === "revision" ? "open" : ""}`}>
-          <button className="qh" onClick={() => toggle("revision")}>
-            <span className={`qic ${!first ? "" : p.validations.length > 1 ? "ok" : first.errors ? "err" : "ok"}`}><RefreshCw size={18} /></span>
+          <button className="qh" type="button" onClick={() => toggle("revision")} aria-expanded={open === "revision"} aria-controls="q-revision">
+            <span className={`qic ${!first ? "" : p.validations.length > 1 ? "ok" : first.errors ? "err" : "ok"}`} aria-hidden="true"><RefreshCw size={18} /></span>
             <div>
               <div className="qt">Revision status</div>
               <div className="qd">Failed checks go back to the model with the exact flags, up to 2 rounds. Unfixed issues are escalated to you.</div>
@@ -113,12 +113,20 @@ export function Quality(p: {
             <ChevronRight size={18} className="chev" />
           </button>
           {open === "revision" && (
-            <div className="qbody scroll">
+            <div className="qbody scroll" id="q-revision">
               {!first && <p className="qd" style={{ padding: "10px 0" }}>Nothing revised yet.</p>}
               {first && p.validations.length === 1 && <p className="qd" style={{ padding: "10px 0" }}>{first.errors ? "Revision in progress…" : "The first draft passed every check — no revision needed."}</p>}
               {p.fixed.map((m, i) => {
                 const [path, ...rest] = m.split(": ");
-                return <div key={i} className="row fixed"><span className="sev fixed" /><div><div className="rp">{path}</div><div className="rm">{rest.join(": ")}</div></div></div>;
+                return (
+                  <div key={i} className="row fixed">
+                    <span className="sev fixed" aria-hidden="true" />
+                    <div>
+                      <div className="rp">{path}</div>
+                      <div className="rm"><span className="sr">fixed: </span>{rest.join(": ")}</div>
+                    </div>
+                  </div>
+                );
               })}
             </div>
           )}
@@ -127,7 +135,7 @@ export function Quality(p: {
         {/* 4. Human review gate */}
         <div className="qcard review">
           <div className="qh" style={{ display: "grid", gridTemplateColumns: "38px 1fr auto", gap: 12, padding: "13px 12px 4px" }}>
-            <span className="qic"><UserCheck size={18} /></span>
+            <span className="qic" aria-hidden="true"><UserCheck size={18} /></span>
             <div>
               <div className="qt">Human review <span className="muted" style={{ fontWeight: 400 }}>(required)</span></div>
               <div className="qd">Nothing is published or sent. The agent has no publish permission — every asset needs your approval, an asset with open errors cannot be approved, and editing one withdraws its approval.</div>
@@ -153,10 +161,23 @@ export function Quality(p: {
             </div>
           )}
         </div>
-        <button className={`btn export ${allApproved ? "primary" : ""}`} disabled={!allApproved || p.running} onClick={p.onExport}>
-          {allApproved ? <Upload size={16} /> : <Lock size={15} />} Export content pack
+        {/* Partial export is the realistic workflow: a reviewer signs off the
+            channels that are ready and the file records which they were. */}
+        <button
+          className={`btn export ${allApproved ? "primary" : ""}`}
+          disabled={p.running || p.approved.size === 0}
+          onClick={p.onExport}
+          title={p.approved.size === 0 ? "Approve at least one asset to export" : undefined}
+        >
+          {allApproved ? <Upload size={16} /> : <Lock size={15} />} Export {allApproved ? "content pack" : `${p.approved.size} approved`}
         </button>
-        <p className="export-note">{allApproved ? "Exports Markdown + JSON with the evidence list." : "Complete human review to enable export."}</p>
+        <p className="export-note">
+          {p.approved.size === 0
+            ? "Approve at least one asset to export."
+            : allApproved
+              ? "Exports Markdown + JSON with the evidence list."
+              : `Exports all ${total} assets, marking the ${total - p.approved.size} still unapproved.`}
+        </p>
       </div>
     </aside>
   );
@@ -164,9 +185,13 @@ export function Quality(p: {
 
 function FlagRow({ f, onClick }: { f: Flag; onClick: () => void }) {
   return (
-    <button className="row" onClick={onClick}>
-      <span className={`sev ${f.severity}`} />
-      <div><div className="rp">{f.path}</div><div className="rm">{f.message}</div></div>
+    <button className="row" type="button" onClick={onClick}>
+      {/* The dot is colour only, so the severity is also spelled out for AT. */}
+      <span className={`sev ${f.severity}`} aria-hidden="true" />
+      <div>
+        <div className="rp">{f.path}</div>
+        <div className="rm"><span className="sr">{f.severity}: </span>{f.message}</div>
+      </div>
     </button>
   );
 }

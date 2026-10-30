@@ -2,8 +2,13 @@
 // and any news link the user gives, and returns plain text the agent can cite.
 import { fetchTextSafely } from "./net";
 
-export const CLIENT_URL =
-  process.env.CLIENT_URL || "https://fde-client-company-demos.aaryanptl.chatgpt.site/adpilot-media";
+// Set CLIENT_URL per deployment. The fallback keeps the demo working out of the
+// box, but it is a third-party domain this project does not control, so a
+// deployment that leaves it unset is announced in the log rather than silently
+// trusting whatever that host serves.
+const CLIENT_URL_FALLBACK = "https://fde-client-company-demos.aaryanptl.chatgpt.site/adpilot-media";
+export const CLIENT_URL = process.env.CLIENT_URL || CLIENT_URL_FALLBACK;
+export const CLIENT_URL_IS_DEFAULT = !process.env.CLIENT_URL;
 
 export type Fact = { id: string; text: string; category: string };
 

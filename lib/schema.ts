@@ -75,6 +75,19 @@ export const PackSchema = z.object({
 });
 export type Pack = z.infer<typeof PackSchema>;
 
+// What the revise step returns when every failure is a single-field fix.
+export const FixesSchema = z.object({
+  fixes: z
+    .array(
+      z.object({
+        path: z.string().describe("The flagged path, copied character for character"),
+        value: z.string().describe("The corrected text for that one field"),
+      }),
+    )
+    .describe("Exactly one entry per flagged path"),
+});
+export type Fixes = z.infer<typeof FixesSchema>;
+
 export type Flag = {
   severity: "error" | "warning";
   asset: "blog" | "linkedin" | "xThread" | "instagram" | "metaAds" | "googleAds" | "image" | "pack";

@@ -29,6 +29,7 @@ export function Studio(p: {
   update: (asset: AssetKey, fn: (p: Pack) => void) => void;
   image: ImgState; regenImage: () => void;
   ctx: EvCtx; steps: Record<StepId, StepState>; error: string | null;
+  regenAsset: (k: AssetKey) => void; regenning: AssetKey | null; canRegen: boolean;
 }) {
   const { tab, pack } = p;
   // Edits are attributed to the open tab so the reviewer's approval of that asset can be withdrawn.
@@ -38,19 +39,58 @@ export function Studio(p: {
   const cites = !pack ? [] : tab === "metaAds" ? [...new Set(pack.metaAds.flatMap((a) => a.factIds))] : tab === "googleAds" ? [...new Set(pack.googleAds.flatMap((a) => a.factIds))] : tab === "image" ? [] : (pack[tab] as { factIds: string[] }).factIds;
   const img = p.image?.dataUrl;
 
+  // Arrow keys move between tabs and take focus with them, which is what the
+  // tablist role promises.
+  const onTabKey = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    const i = ASSETS.findIndex((a) => a.key === tab);
+    const last = ASSETS.length - 1;
+    let next = i;
+    if (e.key === "ArrowRight") next = i === last ? 0 : i + 1;
+    else if (e.key === "ArrowLeft") next = i === 0 ? last : i - 1;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = last;
+    else return;
+    e.preventDefault();
+    const key = ASSETS[next].key;
+    p.setTab(key);
+    requestAnimationFrame(() => document.getElementById(`tab-${key}`)?.focus());
+  };
+
   return (
     <section className="panel studio">
       <div className="panel-h">
         <h2>Content studio {pack && <span className="kicker" style={{ fontWeight: 400 }}>{p.approved.size}/{ASSETS.length} approved</span>}</h2>
         <p>Multi-channel content pack, powered by research and fact-checking</p>
       </div>
-      <nav className="tabs" role="tablist">
-        {ASSETS.map((a) => (
-          <button key={a.key} role="tab" aria-selected={tab === a.key} className={`tab ${tab === a.key ? "on" : ""}`} onClick={() => p.setTab(a.key)}>
-            {TAB_ICON[a.key]} {a.label}
-            {pack && <span className={`st ${p.approved.has(a.key) ? "app" : p.assetErrors(a.key) ? "err" : "ok"}`} />}
-          </button>
-        ))}
+      {/* Full tab pattern: roving tabIndex, arrow/Home/End navigation, and each tab
+          wired to the panel it controls. */}
+      <nav className="tabs" role="tablist" aria-label="Content channels">
+        {ASSETS.map((a) => {
+          const selected = tab === a.key;
+          const state = p.approved.has(a.key) ? "approved" : p.assetErrors(a.key) ? "has errors" : "no errors";
+          return (
+            <button
+              key={a.key}
+              id={`tab-${a.key}`}
+              role="tab"
+              type="button"
+              aria-selected={selected}
+              aria-controls={`panel-${a.key}`}
+              tabIndex={selected ? 0 : -1}
+              className={`tab ${selected ? "on" : ""}`}
+              onClick={() => p.setTab(a.key)}
+              onKeyDown={onTabKey}
+            >
+              {TAB_ICON[a.key]} {a.label}
+              {pack && (
+                <>
+                  <span className={`st ${p.approved.has(a.key) ? "app" : p.assetErrors(a.key) ? "err" : "ok"}`} aria-hidden="true" />
+                  <span className="sr"> — {state}</span>
+                </>
+              )}
+            </button>
+          );
+        })}
       </nav>
 
       {pack && (
@@ -70,6 +110,16 @@ export function Studio(p: {
                 <button className={p.view === "final" ? "on" : ""} onClick={() => p.setView("final")}>Revised {p.finalErrors === 0 ? <Check size={12} className="k" /> : <span className="e">{p.finalErrors}✕</span>}</button>
               </div>
             )}
+            {tab !== "image" && p.canRegen && (
+              <button
+                className="btn sm"
+                disabled={p.running || p.showingDraft || p.regenning !== null}
+                title="Rewrite just this channel, keeping the rest of the pack"
+                onClick={() => p.regenAsset(tab)}
+              >
+                <RefreshCw size={14} className={p.regenning === tab ? "spin" : ""} /> {p.regenning === tab ? "Rewriting…" : "Rewrite"}
+              </button>
+            )}
             <button
               className={`btn sm ${p.approved.has(tab) ? "ok" : ""}`}
               disabled={p.running || p.showingDraft || (!p.approved.has(tab) && p.assetErrors(tab))}
@@ -82,8 +132,15 @@ export function Studio(p: {
         </div>
       )}
 
-      <div className="stage scroll">
-        {p.error && <div className="err-box">Agent error: {p.error}{"\n\n"}Tip: switch to DEMO to show the recorded run, or check that OPENAI_API_KEY or GEMINI_API_KEY is set in .env.local.</div>}
+      <div className="stage scroll" id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`} tabIndex={0}>
+        {/* Operator detail (keys, env files, provider errors) belongs in the server
+            log, not in front of a reviewer who cannot act on it. */}
+        {p.error && (
+          <div className="err-box" role="alert">
+            The agent could not finish this run.{"\n\n"}Switch to DEMO to see the recorded run, or try again in a moment. If it keeps
+            happening, the details are in the server log.
+          </div>
+        )}
         {!pack ? (
           <EmptyState steps={p.steps} running={p.running} />
         ) : (

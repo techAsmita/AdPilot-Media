@@ -35,13 +35,17 @@ export function Workflow({ steps, plan, news, models, totalMs, running, onFact }
             const ms = st.status === "running" && st.startedAt && now ? now - st.startedAt : st.ms;
             return (
               <li key={s.id} className={`step ${st.status} ${s.id === focusId ? "focus" : ""}`}>
-                <span className="num">{st.status === "done" ? <Check size={14} /> : st.status === "error" ? "!" : i + 1}</span>
+                <span className="num" aria-hidden="true">{st.status === "done" ? <Check size={14} /> : st.status === "error" ? "!" : i + 1}</span>
                 <div>
-                  <div className="step-t">{st.title || s.title} <span className="agent">{s.agent}</span></div>
+                  <div className="step-t">
+                    {st.title || s.title} <span className="agent">{s.agent}</span>
+                    {/* The ring and the number carry status by colour, so say it too. */}
+                    <span className="sr"> — {st.status}</span>
+                  </div>
                   <div className="step-d">{st.detail || s.hint}</div>
                 </div>
                 <div className="state">
-                  <span className={`ring ${st.status}`}>{st.status === "done" ? <Check size={11} strokeWidth={3} /> : st.status === "error" ? <span style={{ fontSize: 11, fontWeight: 700 }}>!</span> : null}</span>
+                  <span className={`ring ${st.status}`} aria-hidden="true">{st.status === "done" ? <Check size={11} strokeWidth={3} /> : st.status === "error" ? <span style={{ fontSize: 11, fontWeight: 700 }}>!</span> : null}</span>
                   {ms != null && st.status !== "pending" && st.status !== "skipped" && <span className="ms">{fmtMs(ms)}</span>}
                 </div>
               </li>

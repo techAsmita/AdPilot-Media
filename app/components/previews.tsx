@@ -8,7 +8,16 @@ import { LIMITS } from "@/lib/schema";
 
 export type EvCtx = { facts: Fact[]; sourceNums: Set<string>; onFact: (id: string) => void };
 
-/** Renders text with every number linked to the fact that supports it (or flagged red if none). */
+/**
+ * Renders text with every number linked to the fact that supports it (or flagged
+ * red if none).
+ *
+ * A fact-linked number is a real <button>, so it is focusable and activates with
+ * Enter or Space. The evidence itself is in the accessible name rather than only
+ * in `title`, which never reaches touch users and is read inconsistently by
+ * screen readers; the non-interactive variants carry the same wording in
+ * visually-hidden text.
+ */
 export function Ev({ text, ctx }: { text: string; ctx: EvCtx }) {
   const out: ReactNode[] = [];
   let last = 0;
@@ -20,15 +29,47 @@ export function Ev({ text, ctx }: { text: string; ctx: EvCtx }) {
     if (i > last) out.push(text.slice(last, i));
     const ev = evidenceFor(tok, ctx.facts, ctx.sourceNums);
     if (ev.kind === "fact")
-      out.push(<mark key={i} className="ev" title={`${ev.fact.id}: ${ev.fact.text}`} onClick={() => ctx.onFact(ev.fact.id)}>{tok}</mark>);
+      out.push(
+        <button
+          key={i}
+          type="button"
+          className="ev"
+          title={`${ev.fact.id}: ${ev.fact.text}`}
+          aria-label={`${tok}, supported by fact ${ev.fact.id}: ${ev.fact.text}. Activate to show it in the evidence panel.`}
+          onClick={() => ctx.onFact(ev.fact.id)}
+        >
+          {tok}
+        </button>,
+      );
     else if (ev.kind === "site")
-      out.push(<mark key={i} className="ev site" title="Found on AdPilot's site / source article">{tok}</mark>);
-    else out.push(<mark key={i} className="ev bad" title="Unsupported — not found in any source">{tok}</mark>);
+      out.push(
+        <mark key={i} className="ev site" title="Found on AdPilot's site / source article">
+          {tok}
+          <span className="sr"> (found in AdPilot&apos;s sources)</span>
+        </mark>,
+      );
+    else
+      out.push(
+        <mark key={i} className="ev bad" title="Unsupported — not found in any source">
+          {tok}
+          <span className="sr"> (unsupported: not found in any source)</span>
+        </mark>,
+      );
     last = i + m[0].length;
   }
   if (last < text.length) out.push(text.slice(last));
   return <>{out}</>;
 }
+
+/** Character counter that does not rely on colour alone to say "over the limit". */
+const Counter = ({ n, max, label }: { n: number; max: number; label?: string }) => (
+  <span className={`cc ${n > max ? "over" : ""}`}>
+    {label}
+    {label ? " " : ""}
+    {n}/{max}
+    {n > max && <span className="sr"> — over the limit</span>}
+  </span>
+);
 
 const Media = ({ src, ratio, label }: { src?: string; ratio: string; label?: string }) =>
   src ? <div className="media" style={{ aspectRatio: ratio, backgroundImage: `url(${src})` }} role="img" aria-label={label} /> : <div className="media ph" style={{ aspectRatio: ratio }}>image pending</div>;
@@ -90,7 +131,7 @@ export function XPreview({ pack, ctx }: { pack: Pack; ctx: EvCtx }) {
             <div className="tx"><Ev text={p} ctx={ctx} /></div>
             <div className="tf">
               <span><MessageCircle size={14} /></span><span><Repeat2 size={14} /></span><span><Heart size={14} /></span><span><BarChart2 size={14} /></span>
-              <span className={`cc ${p.length > LIMITS.xPost ? "over" : ""}`}>{p.length}/{LIMITS.xPost}</span>
+              <Counter n={p.length} max={LIMITS.xPost} />
             </div>
           </div>
         </div>
@@ -152,8 +193,8 @@ export function GooglePreview({ pack, ctx }: { pack: Pack; ctx: EvCtx }) {
             <div className="hl"><Ev text={g.headlines.slice(0, 3).join(" | ")} ctx={ctx} /></div>
             <div className="ds"><Ev text={g.descriptions.join(" ")} ctx={ctx} /></div>
             <div className="lens">
-              {g.headlines.map((h, j) => <span key={j} className={`cc ${h.length > LIMITS.googleHeadline ? "over" : ""}`} title={h}>H{j + 1} {h.length}/{LIMITS.googleHeadline}</span>)}
-              {g.descriptions.map((d, j) => <span key={j} className={`cc ${d.length > LIMITS.googleDescription ? "over" : ""}`}>D{j + 1} {d.length}/{LIMITS.googleDescription}</span>)}
+              {g.headlines.map((h, j) => <Counter key={j} n={h.length} max={LIMITS.googleHeadline} label={`H${j + 1}`} />)}
+              {g.descriptions.map((d, j) => <Counter key={j} n={d.length} max={LIMITS.googleDescription} label={`D${j + 1}`} />)}
             </div>
           </div>
         </div>

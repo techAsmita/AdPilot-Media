@@ -7,6 +7,7 @@ import { withModel, hasGoogleKey, hasOpenAIKey } from "./llm";
 import { imagePrompt } from "./prompts";
 import { mockImage } from "./mock";
 import type { Emit } from "./events";
+import { rootLog, type Log } from "./log";
 
 export type ImageResult = { ok: boolean; dataUrl?: string; error?: string };
 
@@ -24,6 +25,7 @@ export async function makeImage(
   demo: boolean,
   emit?: Emit,
   signal?: AbortSignal,
+  log: Log = rootLog,
 ): Promise<ImageResult> {
   if (demo) {
     await sleep(1500);
@@ -58,7 +60,7 @@ export async function makeImage(
           if (!file) throw new Error("model returned no image");
           return `data:${file.mediaType};base64,${file.base64}`;
         },
-        { signal },
+        { signal, log },
       );
       return done(result, modelLabel);
     } catch (e) {
@@ -69,7 +71,9 @@ export async function makeImage(
   if (provider !== "free" && provider !== "gemini" && hasOpenAIKey()) {
     // gpt-image-* always returns base64 and rejects response_format.
     const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2.5-flare";
-    const format = (process.env.OPENAI_IMAGE_FORMAT || "png").toLowerCase();
+    // jpeg by default: measured ~127 KB vs ~1.8 MB for png at 1024x1024/low, and the
+// image is carried as a base64 data URL through the stream, state and storage.
+  const format = (process.env.OPENAI_IMAGE_FORMAT || "jpeg").toLowerCase();
     try {
       const body: Record<string, unknown> = { model, prompt: full, size: sizeFor(ratio), n: 1, output_format: format };
       if (process.env.OPENAI_IMAGE_QUALITY) body.quality = process.env.OPENAI_IMAGE_QUALITY.toLowerCase();
@@ -101,6 +105,6 @@ export async function makeImage(
   } catch (e) {
     errors.push(`Pollinations: ${(e as Error).message.slice(0, 160)}`);
   }
-  errors.forEach((m) => console.error("[image]", m));
+  errors.forEach((m) => log.error("image.failed", { detail: m }));
   return { ok: false, error: errors.join(" | ") };
 }

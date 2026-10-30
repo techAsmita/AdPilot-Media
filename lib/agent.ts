@@ -6,13 +6,15 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { withModel, hasKey, type WithModelOpts } from "./llm";
-import { PackSchema, PlanSchema, type Pack, type Plan, type Flag } from "./schema";
-import { SYSTEM, extractPrompt, planPrompt, generatePrompt, revisePrompt } from "./prompts";
+import { FixesSchema, PackSchema, PlanSchema, type AssetKey, type Pack, type Plan, type Flag } from "./schema";
+import { SYSTEM, extractPrompt, planPrompt, generatePrompt, patchPrompt, regenPrompt, revisePrompt } from "./prompts";
+import { applyFixes, resolveField } from "./patch";
 import { validatePack, type Sources } from "./validate";
-import { CLIENT_URL, SNAPSHOT_FACTS, SNAPSHOT_TEXT, fetchPageText, isUrl, rankFacts, type Fact } from "./sources";
+import { CLIENT_URL, CLIENT_URL_IS_DEFAULT, SNAPSHOT_FACTS, SNAPSHOT_TEXT, fetchPageText, isUrl, rankFacts, type Fact } from "./sources";
 import { MOCK_DRAFT, MOCK_REVISED, MOCK_PLAN } from "./mock";
 import { makeImage } from "./image";
 import type { AgentEvent, Emit, StepId } from "./events";
+import { makeLog, rootLog, type Log } from "./log";
 
 export type { AgentEvent, StepId };
 export { makeImage };
@@ -50,6 +52,23 @@ async function structured<T>(schema: z.ZodType<T>, prompt: string, emit?: Emit, 
 
 const FactsSchema = z.object({ facts: z.array(z.object({ id: z.string(), category: z.string(), text: z.string() })) });
 
+/**
+ * Groups flags by the field they point at, so each broken field is asked about
+ * once even when it has several problems. Returns null if ANY flag is structural,
+ * because those cannot be expressed as a field replacement.
+ */
+function groupFlagsByField(pack: Pack, flags: Flag[]): { path: string; problems: string[]; text: string }[] | null {
+  const byPath = new Map<string, { path: string; problems: string[]; text: string }>();
+  for (const f of flags) {
+    const ref = resolveField(pack, f.path);
+    if (!ref) return null;
+    const existing = byPath.get(f.path);
+    if (existing) existing.problems.push(f.message);
+    else byPath.set(f.path, { path: f.path, problems: [f.message], text: ref.get() });
+  }
+  return [...byPath.values()];
+}
+
 /* ---------------------------------------------------------------------------
  * Brains: the only place live and demo runs differ.
  * ------------------------------------------------------------------------- */
@@ -66,20 +85,32 @@ type Brain = {
   settle(ms: number): Promise<void>;
 };
 
-function liveBrain(signal?: AbortSignal): Brain {
-  const opts: WithModelOpts = { signal };
+function liveBrain(signal?: AbortSignal, log?: Log): Brain {
+  const opts: WithModelOpts = { signal, log };
   return {
     live: true,
     extractFacts: async (siteText, emit) => {
       // Fact extraction gets a 25s budget enforced by withModel, so a slow call is
       // actually aborted rather than left running behind a race.
-      const out = await structured(FactsSchema, extractPrompt(siteText), emit, { deadlineMs: 25_000, signal });
+      const out = await structured(FactsSchema, extractPrompt(siteText), emit, { deadlineMs: 25_000, signal, log });
       return out.facts;
     },
     readNews: (url) => fetchPageText(url),
     plan: (topic, facts, news, emit) => structured(PlanSchema, planPrompt(topic, facts, news), emit, opts),
     generate: (topic, plan, facts, news, emit) => structured(PackSchema, generatePrompt(topic, plan, facts, news), emit, opts),
-    revise: (pack, flags, facts, emit) => structured(PackSchema, revisePrompt(pack, flags, facts), emit, opts),
+    revise: async (pack, flags, facts, emit) => {
+      // One field per flag? Ask for just those fields. Only a structural failure
+      // (wrong number of ads, headlines or posts) needs the whole pack resent.
+      const fields = groupFlagsByField(pack, flags);
+      if (fields && fields.length) {
+        const out = await structured(FixesSchema, patchPrompt(fields, facts), emit, opts);
+        const { pack: patched, applied, skipped } = applyFixes(pack, out.fixes);
+        if (skipped.length) (log ?? makeLog()).warn("revise.unknown_paths", { paths: skipped.join(",") });
+        if (applied.length) return patched;
+        // Nothing landed — fall through to the full rewrite rather than give up.
+      }
+      return structured(PackSchema, revisePrompt(pack, flags, facts), emit, opts);
+    },
     settle: () => Promise.resolve(),
   };
 }
@@ -109,12 +140,12 @@ function demoBrain(): Brain {
   };
 }
 
-const makeBrain = (demo: boolean, signal?: AbortSignal) => (demo ? demoBrain() : liveBrain(signal));
+const makeBrain = (demo: boolean, signal?: AbortSignal, log?: Log) => (demo ? demoBrain() : liveBrain(signal, log));
 
 /* ------------------------------------------------------------------------- */
 
-export async function research(emit: Emit, demo: boolean, signal?: AbortSignal) {
-  const brain = makeBrain(demo, signal);
+export async function research(emit: Emit, demo: boolean, signal?: AbortSignal, log?: Log) {
+  const brain = makeBrain(demo, signal, log);
   const t0 = Date.now();
   emit({ type: "step", id: "research", status: "running", title: "Researching AdPilot site", detail: CLIENT_URL });
   if (siteCache && Date.now() - siteCache.at < 600_000) {
@@ -132,6 +163,7 @@ export async function research(emit: Emit, demo: boolean, signal?: AbortSignal) 
   let text = SNAPSHOT_TEXT;
   let facts = SNAPSHOT_FACTS;
   let source: "live" | "snapshot" = "snapshot";
+  if (CLIENT_URL_IS_DEFAULT) (log ?? rootLog).warn("config.client_url_default", { url: CLIENT_URL });
   if (!brain.live) await brain.settle(900);
   else {
     try {
@@ -161,10 +193,48 @@ export async function research(emit: Emit, demo: boolean, signal?: AbortSignal) 
   return siteCache;
 }
 
-export async function runAgent(input: string, opts: { demo?: boolean; withImage?: boolean; signal?: AbortSignal }, emit: Emit) {
+/**
+ * Regenerates a single channel. PackSchema.shape[asset] is exactly the schema for
+ * that one asset, so the model returns only what is being replaced and the other
+ * ten assets — already reviewed — cannot be disturbed.
+ */
+export async function regenerateAsset(
+  asset: AssetKey,
+  pack: Pack,
+  plan: Plan,
+  facts: Fact[],
+  opts: { demo?: boolean; signal?: AbortSignal; log?: Log } = {},
+): Promise<Pack> {
+  const log = opts.log ?? makeLog();
+  const next = structuredClone(pack);
+  if (opts.demo || !hasKey()) {
+    // Nothing to regenerate from in a recorded run; hand back the draft version
+    // so the button still demonstrates the flow.
+    await sleep(1200);
+    (next as Record<string, unknown>)[asset] = structuredClone((MOCK_DRAFT as Record<string, unknown>)[asset]);
+    return next;
+  }
+  const schema = PackSchema.shape[asset];
+  const current = JSON.stringify(pack[asset]);
+  log.info("regen.start", { asset });
+  const value = await structured(schema as z.ZodType<Pack[AssetKey]>, regenPrompt(asset, plan, facts, current), undefined, {
+    signal: opts.signal,
+    log,
+  });
+  (next as Record<string, unknown>)[asset] = value;
+  log.info("regen.done", { asset });
+  return next;
+}
+
+export async function runAgent(
+  input: string,
+  opts: { demo?: boolean; withImage?: boolean; signal?: AbortSignal; log?: Log },
+  emit: Emit,
+) {
+  const log = opts.log ?? makeLog();
   const demo = opts.demo || !hasKey();
   const signal = opts.signal;
-  const brain = makeBrain(demo, signal);
+  const brain = makeBrain(demo, signal, log);
   // Checked between steps so a disconnected client stops costing tokens.
   const abortIfCancelled = () => {
     if (signal?.aborted) throw new Error("Run cancelled");
@@ -172,11 +242,12 @@ export async function runAgent(input: string, opts: { demo?: boolean; withImage?
   const start = Date.now();
   const raw = input.trim() || "Why boosted posts waste ad spend for D2C brands";
   const newsUrl = isUrl(raw) ? raw : null;
+  log.info("run.start", { mode: demo ? "demo" : "live", isNews: !!newsUrl, topic: raw.slice(0, 80) });
   emit({ type: "meta", mode: demo ? "demo" : "live", topic: raw, isNews: !!newsUrl });
 
   try {
     // 1. Research the client
-    const site = await research(emit, demo, signal);
+    const site = await research(emit, demo, signal, log);
     // The client's own site proves a claim; a linked article is weaker evidence,
     // so the two are kept apart for the verifier.
     let siteText = site.text;
@@ -313,7 +384,7 @@ export async function runAgent(input: string, opts: { demo?: boolean; withImage?
     if (opts.withImage !== false) {
       t = Date.now();
       emit({ type: "step", id: "image", status: "running", title: "Generating image", detail: `${pack.image.channel} · ${pack.image.aspectRatio}` });
-      const img = await makeImage(pack.image.prompt, pack.image.aspectRatio, demo, emit, signal);
+      const img = await makeImage(pack.image.prompt, pack.image.aspectRatio, demo, emit, signal, log);
       emit({ type: "image", ...img, prompt: pack.image.prompt });
       emit({
         type: "step",
@@ -325,9 +396,11 @@ export async function runAgent(input: string, opts: { demo?: boolean; withImage?
       });
     }
 
+    log.info("run.done", { ms: Date.now() - start, rounds: round, passed: v.passed, firstPassErrors, finalErrors: v.errors });
     emit({ type: "done", ms: Date.now() - start, rounds: round, passed: v.passed, firstPassErrors, finalErrors: v.errors });
     return { pack, validation: v, firstPassErrors, rounds: round };
   } catch (e) {
+    log.error("run.failed", { msg: (e as Error).message.slice(0, 300) });
     emit({ type: "error", message: (e as Error).message });
     return null;
   }

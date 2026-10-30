@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FlaskConical, X } from "lucide-react";
 import { streamPost } from "@/lib/client";
 import type { EvalEvent, EvalRow as Row, EvalSummary as Summary } from "@/lib/events";
@@ -10,6 +10,48 @@ export function EvalModal({ demo, onClose }: { demo: boolean; onClose: () => voi
   const [summary, setSummary] = useState<Summary | null>(null);
   const [running, setRunning] = useState(false);
   const [isDemo, setIsDemo] = useState(demo);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Held in a ref so the focus effect below can run once on mount rather than
+  // re-running (and stealing focus back) on every parent re-render.
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
+
+  // Move focus into the dialog, keep Tab inside it, close on Escape, and hand
+  // focus back to whatever opened it.
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        closeRef.current();
+        return;
+      }
+      if (e.key !== "Tab" || !dialogRef.current) return;
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.offsetParent !== null);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      opener?.focus?.();
+    };
+  }, []);
 
   useEffect(() => {
     fetch("/api/eval").then((r) => r.json()).then((s: Summary | null) => {
@@ -30,10 +72,18 @@ export function EvalModal({ demo, onClose }: { demo: boolean; onClose: () => voi
   const pct = (x: number) => `${Math.round(x * 100)}%`;
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Evaluation">
+    <div className="overlay" role="presentation" onClick={onClose}>
+      <div
+        ref={dialogRef}
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="eval-title"
+        tabIndex={-1}
+      >
         <div className="modal-h">
-          <h2><FlaskConical size={18} style={{ verticalAlign: -2, marginRight: 8 }} />Evaluation · 5 fixed topics</h2>
+          <h2 id="eval-title"><FlaskConical size={18} style={{ verticalAlign: -2, marginRight: 8 }} aria-hidden="true" />Evaluation · 5 fixed topics</h2>
           <div className="tool-r">
             {isDemo && <span className="pill-s" style={{ color: "var(--amber)", borderColor: "var(--amber)" }}>Sample numbers · demo</span>}
             {summary && !summary.demo && <span className="sp-meta">Last live run {new Date(summary.at).toLocaleString()}</span>}

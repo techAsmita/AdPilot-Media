@@ -5,10 +5,13 @@ import { runAgent } from "@/lib/agent";
 import { hasKey } from "@/lib/llm";
 import { ndjson } from "@/lib/stream";
 import { checkRate, spendBudget, tooMany } from "@/lib/ratelimit";
+import { makeLog } from "@/lib/log";
 import type { EvalRow, EvalSummary } from "@/lib/events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// 300s needs Vercel Pro or Fluid compute; Hobby caps functions at 60s and will
+// kill the run. MODEL_DEADLINE_MS (default 120s) must stay below whichever applies.
 export const maxDuration = 300;
 
 const EVAL_TOPICS = [
@@ -76,7 +79,7 @@ export async function POST(req: Request) {
         row = { topic, firstPassErrors: s.first, finalErrors: s.final, rounds: s.rounds, passed: s.final === 0, flags: s.flags, ms: 0 };
       } else {
         const flags: string[] = [];
-        const res = await runAgent(topic, { demo: false, withImage: false, signal: req.signal }, (e) => {
+        const res = await runAgent(topic, { demo: false, withImage: false, signal: req.signal, log: makeLog() }, (e) => {
           if (e.type === "validation" && e.round === 0)
             e.validation.flags.filter((f) => f.severity === "error").forEach((f) => flags.push(`${f.path}: ${f.message}`));
         });
