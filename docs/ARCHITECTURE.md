@@ -30,7 +30,7 @@ flowchart LR
 | **Revise only flagged fields, max 2 rounds** | Bounded cost and latency; unresolved issues are escalated to the human, not hidden. |
 | **One structured call for all 11 assets** | Consistent message across channels; one schema (Zod) validates the shape. |
 | **Image is a separate call** | Brief requirement; failure is isolated — the prompt is still reviewable. |
-| **Model fallback chain** | `gemini-3.5-flash → gemini-3-flash-preview → gemini-2.5-flash` (text), `gemini-3.1-flash-image-preview → gemini-2.5-flash-image` (image), across Gemini API and Vertex express mode. |
+| **Model fallback chain** | `gemini-3.8-flash → 3.7-flash → 3.6-flash → 3.5-flash → 3.5-flash-lite → 3-flash-preview` (text), `gemini-3.1-flash-image-preview → gemini-2.5-flash-image` (image), across Gemini API and Vertex express mode. |
 | **Snapshot fallback for research** | The demo never dies because a site is down; the UI shows `live` vs `snapshot`. |
 | **No publish capability** | The agent has no credentials for any channel. Export is a hand-off file gated on 7/7 approvals. |
 | **Demo mode** | A recorded run with real failure types, for offline demos. Clearly labelled in the UI. |

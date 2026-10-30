@@ -15,6 +15,16 @@ An agentic system that researches a client, writes a full multi-channel content 
 
 </div>
 
+## 👥 Team Gamma
+
+| | Member | Role | Contribution |
+|---|---|---|---|
+| **G** | **Greeshma** | Prototype & pipeline | Built the team's first working prototype: the AdPilot fact bank, the single-call generation pipeline, the "every number must exist in the source" validator idea, and the first review UI with per-asset approval. |
+| **R** | **Radhika Asati** | Client research & testing | Researched the AdPilot client: services, pricing, client results and brand tone, which became the facts and tone rules the agent follows. Tested topics, found failure cases and checked outputs against the brief. |
+| **A** | **Asmita Roy** | Agent & product | Built this version: live research and fact extraction, the planning step, the self-revision loop, model fallback, streaming agent trace, evidence linking, evaluation and tests, and the product UI (channel previews, approval gate, Library and Exports, responsive, light/dark). |
+
+Full details are in [Team Gamma: who did what](#7-team-gamma-who-did-what).
+
 ---
 
 ## Contents
@@ -97,7 +107,7 @@ flowchart LR
 |---|---|
 | App | **Next.js 16** (App Router), **TypeScript**, React 19 |
 | AI SDK | **Vercel AI SDK v7** (`generateText` + `Output.object`) with **Zod** schemas, so the model returns typed JSON |
-| Text model | **Gemini 3.5 Flash**, falling back to Gemini 3 Flash and then Gemini 2.5 Flash |
+| Text model | **Gemini 3.8 Flash**, falling back through Gemini 3.7, 3.6 and 3.5 Flash, 3.5 Flash-Lite and 3 Flash. Each model has its own free-tier quota, and a quota error moves straight to the next model |
 | Image model | **Gemini 3.1 Flash Image** (paid tier) → OpenAI `gpt-image-1` (if `OPENAI_API_KEY` is set) → **FLUX via Pollinations** (free, no key). `IMAGE_PROVIDER=free` uses the free provider directly |
 | Providers | Gemini API (AI Studio key), with Vertex AI express mode as a fallback |
 | Streaming | NDJSON event stream: the UI renders each agent step live |
@@ -256,7 +266,7 @@ docs/screenshots/           README images
 - Facts come from a single client page. The number check proves a number **exists** in the source, not that it is used in the right **context** (for example, "3.4" attached to the wrong client).
 - Tone is guided by the prompt but not scored.
 - Runs and approvals live in the browser, not a shared database.
-- A full live run takes about 1 minute.
+- A full live run takes about 1 minute. On the free tier, daily quotas can run out after heavy testing; the app then shows a clear message, and DEMO mode still works.
 
 **Roadmap**
 - [ ] Context-aware claim check (number + client + metric must match one fact)
