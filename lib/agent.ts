@@ -34,7 +34,7 @@ let siteCache: { at: number; facts: Fact[]; text: string; source: "live" | "snap
 async function structured<T>(schema: z.ZodType<T>, prompt: string, emit?: Emit): Promise<T> {
   const { result, modelLabel } = await withModel("text", async (model, label) => {
     const fast = label.startsWith("gemini-3") ? { thinkingConfig: { thinkingLevel: "low" as const } } : undefined;
-    const r = await generateText({ model, system: SYSTEM, prompt, output: Output.object({ schema }), temperature: 0.6, providerOptions: fast ? { google: fast, vertex: fast } : undefined });
+    const r = await generateText({ model, system: SYSTEM, prompt, output: Output.object({ schema }), temperature: 0.6, maxRetries: 0, abortSignal: AbortSignal.timeout(90_000), providerOptions: fast ? { google: fast, vertex: fast } : undefined });
     return r.output as T;
   });
   emit?.({ type: "model", kind: "text", label: modelLabel });
@@ -58,11 +58,15 @@ export async function research(emit: Emit, demo: boolean) {
       const page = await fetchPageText(CLIENT_URL);
       text = page.text;
       source = "live";
-      const out = await structured(
-        z.object({ facts: z.array(z.object({ id: z.string(), category: z.string(), text: z.string() })) }),
-        extractPrompt(text),
-        emit,
-      );
+      // Fact extraction gets a 25s budget; after that the saved snapshot is used.
+      const out = await Promise.race([
+        structured(
+          z.object({ facts: z.array(z.object({ id: z.string(), category: z.string(), text: z.string() })) }),
+          extractPrompt(text),
+          emit,
+        ),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error("fact extraction timed out")), 25_000)),
+      ]);
       if (out.facts.length >= 6) facts = out.facts;
     } catch {
       // fall back to snapshot silently; the UI shows the source

@@ -21,9 +21,12 @@ const list = (v: string | undefined, fallback: string[]) =>
 
 const MODELS: Record<Kind, string[]> = {
   text: list(process.env.TEXT_MODEL, [
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
     "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
     "gemini-3-flash-preview",
-    "gemini-2.5-flash",
   ]),
   image: list(process.env.IMAGE_MODEL, [
     "gemini-3.1-flash-image-preview",
@@ -53,7 +56,7 @@ function isSkippable(err: unknown) {
   const code = e?.statusCode;
   if (code && [400, 401, 403, 404, 429].includes(code)) return true;
   const msg = String(e?.message || "").toLowerCase();
-  return /not found|not supported|permission|api key|unauthenticated|quota|resource_exhausted|invalid argument/.test(msg);
+  return /not found|not supported|no longer available|permission|api key|unauthenticated|quota|resource_exhausted|invalid argument|timeout|timed out|aborted|failed after/.test(msg);
 }
 
 export async function withModel<T>(
@@ -80,5 +83,7 @@ export async function withModel<T>(
       if (!isSkippable(err)) break;
     }
   }
+  if (errors.length && errors.every((e) => /quota|resource_exhausted|429/i.test(e)))
+    throw new Error(`Free-tier quota is used up for every Gemini ${kind} model on this key (it resets daily, around 1:30 pm IST). Switch to DEMO mode, or put a teammate's GEMINI_API_KEY in .env.local.`);
   throw new Error(`All ${kind} models failed.\n` + errors.join("\n"));
 }
