@@ -7,6 +7,7 @@ export const maxDuration = 300;
 
 export async function POST(req: Request) {
   const { input = "", demo = false } = await req.json().catch(() => ({}));
+  if (!String(input).trim()) return Response.json({ error: "Enter a topic or a news link first." }, { status: 400 });
   return ndjson(async (send) => {
     await runAgent(String(input).slice(0, 2000), { demo: !!demo, withImage: true }, send);
   });

@@ -78,10 +78,11 @@ export default function Home() {
 
   async function start(topic?: string) {
     const q = (topic ?? input).trim();
+    if (!q) return;
     if (topic) setInput(topic);
     const id = Date.now().toString(36);
     setRunning(true); setError(null); setSteps(freshSteps()); setTab("blog"); setMode("preview"); setView("final"); setFocusFact(null); setPage("home");
-    setRun({ ...emptyRun(), id, at: Date.now(), topic: q || SAMPLES[0], mode: demo ? "demo" : "live" });
+    setRun({ ...emptyRun(), id, at: Date.now(), topic: q, mode: demo ? "demo" : "live" });
     try {
       await streamPost("/api/agent", { input: q, demo }, (e) => {
         switch (e.type) {
@@ -224,10 +225,10 @@ export default function Home() {
                 <label className="cmd-box">
                   <Link2 size={18} className="muted" />
                   <span className="sr">Topic or news URL</span>
-                  <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !running && start()} placeholder="Enter a topic or paste a news URL…" disabled={running} />
+                  <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !running && input.trim() && start()} placeholder="Enter a topic or paste a news URL…" disabled={running} />
                   {isNews && <span className="tag">NEWS LINK</span>}
                 </label>
-                <button className="run" onClick={() => start()} disabled={running}>
+                <button className="run" onClick={() => start()} disabled={running || !input.trim()} title={!input.trim() ? "Type a topic or paste a news link first" : undefined}>
                   {running ? <><Loader2 size={17} className="spin" style={{ animation: "spin 0.8s linear infinite" }} /> Running</> : <>Run agent <ArrowRight size={17} /></>}
                 </button>
               </div>
