@@ -203,23 +203,63 @@ export async function makeImage(prompt: string, ratio: string, demo: boolean, em
     await sleep(1500);
     return { ok: true, dataUrl: mockImage(ratio) };
   }
-  try {
-    const { result, modelLabel } = await withModel("image", async (model) => {
-      const r = await generateText({
-        model,
-        prompt: imagePrompt(prompt, ratio),
-        providerOptions: {
-          google: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: ratio } },
-          vertex: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: ratio } },
-        },
+  // Order: Gemini image model -> OpenAI (if OPENAI_API_KEY) -> Pollinations (free, no key).
+  // IMAGE_PROVIDER=free skips straight to the free provider.
+  const errors: string[] = [];
+  const full = imagePrompt(prompt, ratio);
+  const done = (dataUrl: string, label: string) => { emit?.({ type: "model", kind: "image", label }); return { ok: true, dataUrl }; };
+
+  if (process.env.IMAGE_PROVIDER !== "free" && hasKey()) {
+    try {
+      const { result, modelLabel } = await withModel("image", async (model) => {
+        const r = await generateText({
+          model,
+          prompt: full,
+          providerOptions: {
+            google: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: ratio } },
+            vertex: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: ratio } },
+          },
+        });
+        const file = r.files.find((f) => f.mediaType.startsWith("image/"));
+        if (!file) throw new Error("model returned no image");
+        return `data:${file.mediaType};base64,${file.base64}`;
       });
-      const file = r.files.find((f) => f.mediaType.startsWith("image/"));
-      if (!file) throw new Error("model returned no image");
-      return `data:${file.mediaType};base64,${file.base64}`;
-    });
-    emit?.({ type: "model", kind: "image", label: modelLabel });
-    return { ok: true, dataUrl: result };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
+      return done(result, modelLabel);
+    } catch (e) {
+      errors.push(`Gemini: ${(e as Error).message.slice(0, 160)}`);
+    }
   }
+
+  if (process.env.OPENAI_API_KEY && process.env.IMAGE_PROVIDER !== "free") {
+    try {
+      const size = ratio === "16:9" ? "1536x1024" : ratio === "1:1" ? "1024x1024" : "1024x1536";
+      const res = await fetch("https://api.openai.com/v1/images/generations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+        body: JSON.stringify({ model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1", prompt: full, size, n: 1 }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error?.message || `HTTP ${res.status}`);
+      return done(`data:image/png;base64,${j.data[0].b64_json}`, `${process.env.OPENAI_IMAGE_MODEL || "gpt-image-1"} · OpenAI`);
+    } catch (e) {
+      errors.push(`OpenAI: ${(e as Error).message.slice(0, 160)}`);
+    }
+  }
+
+  try {
+    const [w, h] = ratio === "16:9" ? [1280, 720] : ratio === "1:1" ? [1024, 1024] : [1024, 1280];
+    const q = encodeURIComponent(full.replace(/\s+/g, " ").slice(0, 700));
+    const url = `https://image.pollinations.ai/prompt/${q}?width=${w}&height=${h}&nologo=true&model=flux&seed=${Math.floor(Math.random() * 1e6)}`;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 90_000);
+    const res = await fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
+    const type = res.headers.get("content-type") || "";
+    if (!res.ok || !type.startsWith("image/")) throw new Error(`HTTP ${res.status} ${type}`);
+    const b64 = Buffer.from(await res.arrayBuffer()).toString("base64");
+    return done(`data:${type};base64,${b64}`, "FLUX · Pollinations (free)");
+  } catch (e) {
+    errors.push(`Pollinations: ${(e as Error).message.slice(0, 160)}`);
+  }
+  errors.forEach((m) => console.error("[image]", m));
+  return { ok: false, error: errors.join(" | ") };
 }
