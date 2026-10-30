@@ -54,9 +54,9 @@ const label = (c: Combo) => `${c.model} · ${c.provider === "gemini" ? "Gemini A
 function isSkippable(err: unknown) {
   const e = err as { statusCode?: number; message?: string; cause?: unknown };
   const code = e?.statusCode;
-  if (code && [400, 401, 403, 404, 429].includes(code)) return true;
+  if (code && [400, 401, 403, 404, 429, 500, 502, 503, 504].includes(code)) return true;
   const msg = String(e?.message || "").toLowerCase();
-  return /not found|not supported|no longer available|permission|api key|unauthenticated|quota|resource_exhausted|invalid argument|timeout|timed out|aborted|failed after/.test(msg);
+  return /not found|not supported|no longer available|permission|api key|unauthenticated|quota|resource_exhausted|invalid argument|timeout|timed out|aborted|failed after|high demand|overloaded|unavailable|try again/.test(msg);
 }
 
 export async function withModel<T>(
