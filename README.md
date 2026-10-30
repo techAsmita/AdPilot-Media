@@ -7,7 +7,7 @@ An agentic system that researches a client, writes a full multi-channel content 
 
 **Team Gamma · AI FDE Fellowship (Build Fast with AI) · Week 1**
 
-🔗 **Live demo:** _coming soon — deployment link will be added here_
+🔗 **Live demo:** **[adpilot-media.vercel.app](https://adpilot-media.vercel.app)**
 
 <br/>
 
@@ -224,9 +224,9 @@ Without a key, the app runs in **DEMO** mode automatically. `.env.local` is git-
 
 1. Go to [vercel.com/new](https://vercel.com/new) and import `techAsmita/AdPilot-Media`. The framework is detected as Next.js automatically.
 2. Under **Environment Variables**, add `GEMINI_API_KEY`, `GEMINI_PROVIDER=gemini` and `IMAGE_PROVIDER=free` (remove the last one once paid image credits are set up).
-3. Click **Deploy**, then paste the URL at the top of this README.
+3. Click **Deploy**. Live at **https://adpilot-media.vercel.app**. Every push to `main` redeploys automatically.
 
-Note: a full live run takes about a minute. The routes set `maxDuration = 300`, which fits Vercel's free Hobby plan. Run the 5-topic **Eval** locally and commit `data/eval-results.json`; the deployed app shows those saved results.
+Note: a full live run takes about a minute. The routes set `maxDuration = 300`, which fits Vercel's free Hobby plan. Run the 5-topic **Eval** locally and commit `data/eval-results.json`; the deployed app shows those saved results (Vercel's filesystem is read-only, so eval runs there are not saved).
 
 ## 10. Project structure
 
