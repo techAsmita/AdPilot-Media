@@ -74,7 +74,7 @@ export async function POST(req: Request) {
       errorsCaught: rows.reduce((s, r) => s + (Number(r.firstPassErrors) || 0), 0),
       errorsFixed: rows.reduce((s, r) => s + ((Number(r.firstPassErrors) || 0) - (Number(r.finalErrors) || 0)), 0),
     };
-    if (!isDemo) await fs.writeFile(FILE, JSON.stringify(summary, null, 2)).catch(() => {});
+    if (!isDemo) await fs.mkdir(path.dirname(FILE), { recursive: true }).then(() => fs.writeFile(FILE, JSON.stringify(summary, null, 2))).catch(() => {});
     send({ type: "eval-done", summary });
   });
 }
