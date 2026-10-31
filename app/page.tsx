@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Download, FlaskConical, House, Library as LibraryIcon, Link2, Moon, Sun, Loader2 } from "lucide-react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight, Download, FlaskConical, House, Library as LibraryIcon, Link2, Moon, Plus, Sun, Loader2 } from "lucide-react";
 import type { AssetKey, Flag, Pack } from "@/lib/schema";
 import { validatePack, type Validation } from "@/lib/validate";
 import {
@@ -32,6 +32,8 @@ export default function Home() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [input, setInput] = useState("");
   const [hasKey, setHasKey] = useState<boolean | null>(null);
+  // Reported by /api/status, so the badge never hardcodes a provider name.
+  const [provider, setProvider] = useState<{ providerName: string | null; modelLabel: string | null }>({ providerName: null, modelLabel: null });
   const [demo, setDemo] = useState(false);
   const [running, setRunning] = useState(false);
   const [steps, setSteps] = useState<Record<StepId, StepState>>(freshSteps);
@@ -47,12 +49,21 @@ export default function Home() {
   const [toast, setToast] = useState<string | null>(null);
   // Lets the reviewer stop a run instead of paying for it to finish.
   const [abort, setAbort] = useState<AbortController | null>(null);
+  // Bumped on every start and on reset, so events from a superseded run are ignored.
+  const runSeq = useRef(0);
 
   useEffect(() => {
     setTheme((document.documentElement.dataset.theme as "light" | "dark") || "light");
     setRuns(loadRuns());
     setExports(loadExports());
-    fetch("/api/status").then((r) => r.json()).then((s) => { setHasKey(s.hasKey); if (!s.hasKey) setDemo(true); }).catch(() => { setHasKey(false); setDemo(true); });
+    fetch("/api/status")
+      .then((r) => r.json())
+      .then((s) => {
+        setHasKey(s.hasKey);
+        setProvider({ providerName: s.providerName ?? null, modelLabel: s.modelLabel ?? null });
+        if (!s.hasKey) setDemo(true);
+      })
+      .catch(() => { setHasKey(false); setDemo(true); });
   }, []);
   useEffect(() => {
     if (!toast) return;
@@ -79,10 +90,36 @@ export default function Home() {
   const patch = (fn: (r: RunState) => Partial<RunState>) => setRun((r) => ({ ...r, ...fn(r) }));
   const persist = useCallback((r: RunState) => { if (r.id && r.working) { saveRun(r); setRuns(loadRuns()); } }, []);
 
+  /**
+   * Clears everything back to the first-load state without a reload: input,
+   * results, step trace, error and loading flag. Any run still in flight is
+   * aborted AND superseded, so its events cannot land afterwards.
+   */
+  function resetRun() {
+    runSeq.current++;
+    abort?.abort();
+    setAbort(null);
+    setRunning(false);
+    setInput("");
+    setError(null);
+    setToast(null);
+    setSteps(freshSteps());
+    setRun(emptyRun());
+    setTab("blog");
+    setMode("preview");
+    setView("final");
+    setFocusFact(null);
+    setRegenning(null);
+    setPage("home");
+  }
+
   async function start(topic?: string) {
     const q = (topic ?? input).trim();
     if (!q) return;
     if (topic) setInput(topic);
+    // Supersede anything already running so two streams cannot interleave.
+    const seq = ++runSeq.current;
+    abort?.abort();
     const id = Date.now().toString(36);
     setRunning(true); setError(null); setSteps(freshSteps()); setTab("blog"); setMode("preview"); setView("final"); setFocusFact(null); setPage("home");
     setRun({ ...emptyRun(), id, at: Date.now(), topic: q, mode: demo ? "demo" : "live" });
@@ -91,20 +128,28 @@ export default function Home() {
     try {
       // The event reducer lives in lib/run-state.ts so it can be unit tested.
       await streamPost("/api/agent", { input: q, demo }, (e) => {
+        // A reset or a newer run has taken over: drop these events on the floor.
+        if (seq !== runSeq.current) return;
         if (e.type === "step") setSteps((s) => applyStep(s, e));
         else if (e.type === "error") setError(e.message);
         else setRun((r) => applyEvent(r, e));
       }, ctrl.signal);
+      if (seq !== runSeq.current) return;
     } catch (e) {
+      if (seq !== runSeq.current) return;
       // An abort is the reviewer's own doing, not a failure to report.
       if ((e as Error).name === "AbortError" || ctrl.signal.aborted) setToast("Run stopped.");
       else setError((e as Error).message);
     } finally {
-      setAbort(null);
-      // No explicit save here: clearing `running` lets the debounced persist
-      // effect below write the finished run, which also avoids reading state
-      // through a ref during render.
-      setRunning(false);
+      // Only the current run may clear these; a superseded one must not undo the
+      // state the run that replaced it has already set.
+      if (seq === runSeq.current) {
+        setAbort(null);
+        // No explicit save here: clearing `running` lets the debounced persist
+        // effect below write the finished run, which also avoids reading state
+        // through a ref during render.
+        setRunning(false);
+      }
     }
   }
 
@@ -217,7 +262,17 @@ export default function Home() {
 
   const isNews = /^https?:\/\/\S+$/i.test(input.trim());
   const compact = running || !!run.working;
-  const statusLabel = demo ? "Demo · recorded run" : run.models.text ? run.models.text.split(" · ")[0] : hasKey ? "Gemini · Ready" : hasKey === false ? "No API key" : "Checking…";
+  // Once a run has happened, show the model that actually answered. Before that,
+  // show whatever provider the server says it would use.
+  const statusLabel = demo
+    ? "Demo · recorded run"
+    : run.models.text
+      ? run.models.text.split(" · ")[0]
+      : hasKey
+        ? `${provider.providerName ?? "Provider"} · Ready`
+        : hasKey === false
+          ? "No API key"
+          : "Checking…";
 
   return (
     <div className={`app ${page}`}>
@@ -274,6 +329,13 @@ export default function Home() {
                 ) : (
                   <button className="run" onClick={() => start()} disabled={!input.trim()} title={!input.trim() ? "Type a topic or paste a news link first" : undefined}>
                     Run agent <ArrowRight size={17} />
+                  </button>
+                )}
+                {/* Appears once a run exists — finished, failed or stopped — so the
+                    reviewer can clear the screen without reloading the page. */}
+                {!running && !!run.id && (
+                  <button className="run ghost" onClick={resetRun} title="Clear this run and start a new one">
+                    <Plus size={17} /> New article
                   </button>
                 )}
               </div>

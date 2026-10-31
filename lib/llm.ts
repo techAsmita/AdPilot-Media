@@ -75,7 +75,30 @@ function build(c: Combo): LanguageModel {
 }
 
 const PROVIDER_LABEL: Record<Provider, string> = { gemini: "Gemini API", vertex: "Vertex AI", openai: "OpenAI" };
+const SHORT_LABEL: Record<Provider, string> = { gemini: "Gemini", vertex: "Vertex AI", openai: "OpenAI" };
 const label = (c: Combo) => `${c.model} · ${PROVIDER_LABEL[c.provider]}`;
+
+export type PlannedModel = { provider: Provider | null; providerName: string | null; model: string | null; label: string | null };
+
+/**
+ * Which provider and model the NEXT text call would use, resolved from the same
+ * key detection and ordering that withModel uses — without calling anything.
+ *
+ * This exists so the UI never has to hardcode a provider name: /api/status reports
+ * it and the badge renders whatever comes back.
+ */
+export function plannedTextModel(): PlannedModel {
+  const none: PlannedModel = { provider: null, providerName: null, model: null, label: null };
+  const cached = cache.text;
+  if (cached && hasKeyFor(cached.provider))
+    return { provider: cached.provider, providerName: SHORT_LABEL[cached.provider], model: cached.model, label: label(cached) };
+  for (const provider of providerOrder()) {
+    if (!hasKeyFor(provider)) continue;
+    const model = modelsFor(provider, "text")[0];
+    if (model) return { provider, providerName: SHORT_LABEL[provider], model, label: label({ provider, model }) };
+  }
+  return none;
+}
 
 function isSkippable(err: unknown) {
   const e = err as { statusCode?: number; message?: string; cause?: unknown };

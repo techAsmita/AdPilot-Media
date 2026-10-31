@@ -1,67 +1,59 @@
 {
-  "demo": true,
-  "at": "2026-10-30T19:45:28.888Z",
+  "demo": false,
+  "at": "2026-10-31T06:15:05.829Z",
   "rows": [
     {
       "topic": "Why boosted posts waste ad spend for D2C brands",
-      "firstPassErrors": 3,
-      "finalErrors": 0,
-      "rounds": 1,
-      "passed": true,
-      "flags": [
-        "linkedin.post: Unsupported number \"40%\"",
-        "metaAds[3].primaryText: Unsupported number \"60%\"",
-        "googleAds[1].headline 2: 36 chars (max 30)"
-      ],
-      "ms": 0
-    },
-    {
-      "topic": "How local clinics can lower cost per lead on Google",
-      "firstPassErrors": 1,
-      "finalErrors": 0,
-      "rounds": 1,
-      "passed": true,
-      "flags": [
-        "googleAds[2].headline 1: 33 chars (max 30)"
-      ],
-      "ms": 0
-    },
-    {
-      "topic": "Weekly creative refreshes: why ad performance decays",
       "firstPassErrors": 0,
       "finalErrors": 0,
       "rounds": 0,
       "passed": true,
       "flags": [],
-      "ms": 0
+      "ms": 11852
     },
     {
-      "topic": "What a ₹35,000/month ad management fee actually covers",
-      "firstPassErrors": 2,
+      "topic": "How local clinics can lower cost per lead on Google",
+      "firstPassErrors": 0,
+      "finalErrors": 0,
+      "rounds": 0,
+      "passed": true,
+      "flags": [],
+      "ms": 9838
+    },
+    {
+      "topic": "Weekly creative refreshes: why ad performance decays",
+      "firstPassErrors": 1,
       "finalErrors": 0,
       "rounds": 1,
       "passed": true,
       "flags": [
-        "blog.body: Unsupported number \"50%\"",
-        "xThread.posts[3]: Post is 291 chars (max 280)"
+        "metaAds[1].description: Description is 33 chars (max 30)"
       ],
-      "ms": 0
+      "ms": 12263
+    },
+    {
+      "topic": "What a ₹35,000/month ad management fee actually covers",
+      "firstPassErrors": 0,
+      "finalErrors": 0,
+      "rounds": 0,
+      "passed": true,
+      "flags": [],
+      "ms": 12012
     },
     {
       "topic": "Meta or Google ads for a coaching centre?",
-      "firstPassErrors": 2,
-      "finalErrors": 1,
+      "firstPassErrors": 1,
+      "finalErrors": 0,
       "rounds": 2,
-      "passed": false,
+      "passed": true,
       "flags": [
-        "instagram.caption: Unsupported number \"2\"",
-        "googleAds[3].description 1: Description is 94 chars (max 90)"
+        "metaAds[1].description: Description is 41 chars (max 30)"
       ],
-      "ms": 0
+      "ms": 13147
     }
   ],
-  "firstPassRate": 0.2,
-  "finalPassRate": 0.8,
-  "errorsCaught": 8,
-  "errorsFixed": 7
+  "firstPassRate": 0.6,
+  "finalPassRate": 1,
+  "errorsCaught": 2,
+  "errorsFixed": 2
 }

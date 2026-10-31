@@ -152,7 +152,7 @@ export function packToMarkdown(run: RunState) {
   const cited = new Set([p.blog.factIds, p.linkedin.factIds, p.xThread.factIds, p.instagram.factIds, ...p.metaAds.map((a) => a.factIds), ...p.googleAds.map((g) => g.factIds)].flat());
   return [
     `# AdPilot content pack — ${run.topic}`,
-    `Generated ${new Date(run.at).toLocaleString()} · ${run.mode === "live" ? run.models.text || "Gemini" : "demo run"}`,
+    `Generated ${new Date(run.at).toLocaleString()} · ${run.mode === "live" ? run.models.text || "live model" : "demo run"}`,
     `Reviewer approved ${run.approved.length}/${ASSETS.length} assets. Nothing has been published.`,
     `\n## Blog: ${p.blog.title}\n\n${p.blog.body}`,
     `\n## LinkedIn\n\n${p.linkedin.post}`,

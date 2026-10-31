@@ -128,6 +128,9 @@ input, textarea { font: inherit; color: inherit; }
 .cmd-box .tag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; color: var(--accent); background: var(--accent-soft); padding: 3px 8px; border-radius: 5px; white-space: nowrap; }
 .run { height: 54px; padding: 0 30px; border-radius: 12px; background: var(--accent); color: var(--accent-ink); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; box-shadow: var(--shadow); }
 .run:disabled { background: var(--line-2); color: var(--muted); }
+/* Secondary action on the command row: same 54px height, quieter styling. */
+.run.ghost { background: var(--surface); color: var(--text); border: 1px solid var(--line-2); font-weight: 500; padding: 0 22px; box-shadow: none; }
+.run.ghost:hover { border-color: var(--accent); color: var(--accent); }
 .examples { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .examples > span { font-size: 13px; color: var(--muted); margin-right: 4px; flex: none; white-space: nowrap; }
 .chip { border: 1px solid var(--line-2); background: var(--surface); padding: 6px 13px; border-radius: 999px; font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
