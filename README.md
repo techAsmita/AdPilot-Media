@@ -21,7 +21,7 @@ An agentic system that researches a client, writes a full multi-channel content 
 
 | | Member | Role | Contribution |
 |---|---|---|---|
-| **G** | **Greeshma** | Prototype & pipeline | Built the team's first working prototype: the AdPilot fact bank, the single-call generation pipeline, the "every number must exist in the source" validator idea, and the first review UI with per-asset approval. |
+| **G** | **Greeshma** | Prototype, pipeline & hardening | Built the team's first working prototype (fact bank, single-call pipeline, the "every number must exist in the source" validator idea, first review UI). Then led the production hardening pass: the OpenAI provider, outbound-URL (SSRF) guard, rate limits and daily budget, a stricter verifier with field-level repair, Stop/Rewrite controls, accessibility, security headers, CI, and most of the test suite. |
 | **R** | **Radhika Asati** | Client research & testing | Researched the AdPilot client: services, pricing, client results and brand tone, which became the facts and tone rules the agent follows. Tested topics, found failure cases and checked outputs against the brief. |
 | **A** | **Asmita Roy** | Agent & product | Built this version: live research and fact extraction, the planning step, the self-revision loop, model fallback, streaming agent trace, evidence linking, evaluation and tests, and the product UI (channel previews, approval gate, Library and Exports, responsive, light/dark). |
 
@@ -115,7 +115,7 @@ flowchart LR
 | Fallback | One deadline covers the whole chain (`MODEL_DEADLINE_MS`, default 120 s) with a per-attempt cap, and a transient 5xx retries the same model once before dropping to a weaker one |
 | Streaming | NDJSON event stream, typed end to end by one `AgentEvent` union: the UI renders each agent step live |
 | Storage | None on the server. Runs, approvals and exports live in browser localStorage |
-| Tests | `node:test` + `tsx` — **87 tests** across the verifier, URL guard, tokenizer, rate limiter, stream reducer, NDJSON framing and accessibility contracts |
+| Tests | `node:test` + `tsx` — **96 tests** across the verifier, URL guard, tokenizer, rate limiter, stream reducer, NDJSON framing and accessibility contracts |
 | CI | GitHub Actions: typecheck → lint (ESLint 9) → test → build, including a build with no API key |
 | UI | Hand-written CSS with design tokens, light/dark themes, lucide icons, fonts self-hosted via `next/font` |
 | Hosting | Vercel. `maxDuration = 300` is the **maximum on Hobby with Fluid compute** (default for new projects) and the default on Pro. Without Fluid, Hobby caps at 60 s |
@@ -173,7 +173,7 @@ Live results are written to `data/eval-results.json`, and a sample set is commit
 
 ### Tests and checks
 ```bash
-npm test          # 87 tests
+npm test          # 96 tests
 npm run typecheck # tsc --noEmit
 npm run lint      # ESLint 9
 npm run build     # must also pass with no API key
@@ -239,9 +239,9 @@ Each member built and owns a part of the AdPilot agent; this repository combines
 
 | Member | Role | Tasks |
 |---|---|---|
-| **Greeshma** | Prototype & pipeline | Built the team's first working prototype ([AGSGreeshma/Adpilot_content_agent](https://github.com/AGSGreeshma/Adpilot_content_agent)): the curated AdPilot fact bank, the single-call generation pipeline with a Zod schema, the deterministic "every number must exist in the fact bank" validator idea, and the first editable review UI with per-asset approval. This version builds on that design. |
+| **Greeshma** | Prototype, pipeline & hardening | Built the team's first working prototype ([AGSGreeshma/Adpilot_content_agent](https://github.com/AGSGreeshma/Adpilot_content_agent)): the curated AdPilot fact bank, the single-call generation pipeline with a Zod schema, the deterministic "every number must exist in the fact bank" validator idea, and the first editable review UI with per-asset approval. This version builds on that design. She then led the production hardening pass: the OpenAI text and image provider, the outbound-URL (SSRF) guard, per-IP rate limits and a daily run budget, a stricter verifier with field-level repair and a cheaper revise loop, Stop/Rewrite/reset controls, accessibility and security headers, the CI workflow, and most of the 96-test suite. |
 | **Radhika Asati** | Client research & testing | Studied the AdPilot client site: services, pricing, client results and brand tone, which became the facts and tone rules the agent is held to. Tested the agent across topics, found failure cases and checked outputs against the brief, which feeds the evaluation set. |
-| **Asmita Roy** | Agent & product | Built this Research & Revise version: live site research with LLM fact extraction and snapshot fallback, news-link input, the Strategist step, the self-revision loop, the Gemini model and provider fallback chain, streaming agent trace, evidence linking, the evaluation harness and verifier unit tests, the product UI (channel previews, approval gate, Library and Exports, responsive, dark mode), and the docs. |
+| **Asmita Roy** | Agent & product | Built this Research & Revise version: live site research with LLM fact extraction and snapshot fallback, news-link input, the Strategist step, the self-revision loop, the multi-model and multi-provider fallback chain, streaming agent trace, evidence linking, the evaluation harness and verifier unit tests, the product UI (channel previews, approval gate, Library and Exports, responsive, dark mode), and the docs. |
 
 ## 8. Run it locally
 
@@ -295,7 +295,7 @@ At least one text key is required for LIVE mode. Without any key the app runs in
 2. Under **Environment Variables**, add `OPENAI_API_KEY`, `CLIENT_URL`, and `NEXT_PUBLIC_SITE_URL=https://your-domain`. Add `IMAGE_PROVIDER=free` if you would rather not pay for images.
 3. Click **Deploy**. Live at **https://adpilot-media.vercel.app**. Every push to `main` redeploys automatically.
 
-**`maxDuration` and your plan.** A full live run takes 40–60 s, and the routes set `maxDuration = 300`.
+**`maxDuration` and your plan.** A full live run takes about 25–60 s (measured ≈25 s on `gpt-4.1-mini`), and the routes set `maxDuration = 300`.
 
 | Plan | Default | Maximum |
 |---|---|---|
@@ -365,7 +365,7 @@ lib/
   text.ts                   word count shared by verifier and editor
   mock.ts                   recorded demo run + PLANTED_DEFECTS
   client.ts                 streaming, evidence linking, browser storage
-tests/                      87 tests (see §5)
+tests/                      96 tests (see §5)
 .github/workflows/ci.yml    typecheck → lint → test → build
 docs/ARCHITECTURE.md        design decisions
 docs/screenshots/           README images
@@ -379,7 +379,7 @@ data/eval-results.json      committed sample eval results
 - Facts come from a single client page. The number check now enforces the **unit** a figure is used with, but still not its **context** — "3.4" attached to the wrong client would pass.
 - Tone is guided by the prompt but not scored.
 - Runs and approvals live in the browser, not a shared database. Images are held as base64 data URLs rather than in a blob store, so they travel through the stream and state as well as storage.
-- A full live run takes 40–60 s, and `gpt-4.1-mini` does not reliably count characters — expect the occasional 31-character Google headline, which is what the two revise rounds are for.
+- A full live run takes about 25–60 s, and `gpt-4.1-mini` does not reliably count characters — expect the occasional 31-character Google headline, which is what the two revise rounds are for.
 - Prompt-prefix caching is wired up but **not yet paying off**: the shared prefix is ~680 tokens and providers cache above 1024. It starts to help as the fact bank grows.
 - Accessibility is verified at the markup level by tests. It has **not** been through a screen-reader or keyboard pass with real assistive technology.
 
