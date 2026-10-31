@@ -27,8 +27,13 @@ export async function POST(req: Request) {
   const rate = checkRate("image", req); // same budget class as a single extra model call
   if (!rate.ok) return tooMany("Too many regenerations from this address. Wait a moment.", rate.retryAfter);
 
+  // DEMO replays a recorded pack, so there is nothing to regenerate from. Saying
+  // so beats handing back the draft version and looking like a failure.
   const isDemo = !!demo || !hasKey();
-  if (!isDemo && !spendBudget(1).ok)
+  if (isDemo)
+    return Response.json({ error: "Rewrite is not available in DEMO mode — a recorded run has nothing to regenerate from." }, { status: 409 });
+
+  if (!spendBudget(1).ok)
     return tooMany("The daily run budget for this deployment is used up. Switch to DEMO mode or try again tomorrow.");
 
   const log = makeLog();

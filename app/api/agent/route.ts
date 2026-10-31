@@ -5,7 +5,8 @@ import { makeLog } from "@/lib/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// 300s needs Vercel Pro or Fluid compute; Hobby caps functions at 60s and will
+// 300s is the maximum on Vercel Hobby with Fluid compute (default for new
+// projects) and the default on Pro. Without Fluid, Hobby caps at 60s and will
 // kill the run. MODEL_DEADLINE_MS (default 120s) must stay below whichever applies.
 export const maxDuration = 300;
 

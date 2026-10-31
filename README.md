@@ -118,7 +118,7 @@ flowchart LR
 | Tests | `node:test` + `tsx` — **87 tests** across the verifier, URL guard, tokenizer, rate limiter, stream reducer, NDJSON framing and accessibility contracts |
 | CI | GitHub Actions: typecheck → lint (ESLint 9) → test → build, including a build with no API key |
 | UI | Hand-written CSS with design tokens, light/dark themes, lucide icons, fonts self-hosted via `next/font` |
-| Hosting | Vercel. **`maxDuration = 300` needs Pro or Fluid compute**; Hobby caps functions at 60 s |
+| Hosting | Vercel. `maxDuration = 300` is the **maximum on Hobby with Fluid compute** (default for new projects) and the default on Pro. Without Fluid, Hobby caps at 60 s |
 
 ### What this deployment runs on, and what it costs
 
@@ -129,7 +129,7 @@ flowchart LR
 | Image (free alternative) | **FLUX** via **Pollinations**, `IMAGE_PROVIDER=free` | ₹0, no key (anonymous tier: ~1 image per 15 s, may watermark) |
 | Text (free alternative) | Google **Gemini** Flash on the AI Studio free tier | ₹0, with daily per-model limits |
 | Verifier, revision loop, UI | Our code | ₹0 |
-| Hosting | **Vercel** | Free on Hobby, but see the `maxDuration` note in §9 |
+| Hosting | **Vercel** | Free on Hobby, including the 300 s function duration with Fluid compute |
 | Repository | GitHub | ₹0 |
 
 **≈ $0.05 per full run**, and the image is the larger half — so `IMAGE_PROVIDER=free` roughly halves it. Costs are measured, not estimated, except the per-image figure, which is derived from the published token rates because OpenAI does not publish a per-image table for this model.
@@ -295,7 +295,15 @@ At least one text key is required for LIVE mode. Without any key the app runs in
 2. Under **Environment Variables**, add `OPENAI_API_KEY`, `CLIENT_URL`, and `NEXT_PUBLIC_SITE_URL=https://your-domain`. Add `IMAGE_PROVIDER=free` if you would rather not pay for images.
 3. Click **Deploy**. Live at **https://adpilot-media.vercel.app**. Every push to `main` redeploys automatically.
 
-**`maxDuration` and your plan.** A full live run takes 40–60 s, and the routes set `maxDuration = 300`. **That requires Pro or Fluid compute — Hobby caps functions at 60 s and will kill a slow run mid-stream.** On Hobby, either accept that long runs are cut off or lower `MODEL_DEADLINE_MS` so the agent gives up before the platform does.
+**`maxDuration` and your plan.** A full live run takes 40–60 s, and the routes set `maxDuration = 300`.
+
+| Plan | Default | Maximum |
+|---|---|---|
+| Hobby (Fluid compute) | 300 s | **300 s** |
+| Pro (Fluid compute) | 300 s | 800 s, 1800 s extended (beta) |
+| Hobby without Fluid | 10 s | 60 s |
+
+**Fluid compute is enabled by default for new projects**, so `maxDuration = 300` works on the free plan. Older projects may predate that default — check the project's compute setting before assuming a long run will survive. If you cannot enable Fluid, lower `MODEL_DEADLINE_MS` so the agent gives up before the platform kills it mid-stream.
 
 **Eval results.** Run the 5-topic **Eval** locally and commit `data/eval-results.json`; the deployed app shows those saved results, because most hosts give you a read-only filesystem.
 

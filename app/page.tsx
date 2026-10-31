@@ -358,6 +358,7 @@ export default function Home() {
               flags={flags} assetErrors={assetErrors} approved={approved} toggleApprove={toggleApprove} update={update}
               image={run.image} regenImage={regenImage} ctx={ctx} steps={steps} error={error}
               regenAsset={regenAsset} regenning={regenning} canRegen={!!run.plan}
+              regenBlockedReason={run.mode === "demo" ? "Not available in DEMO — a recorded run has nothing to regenerate from" : null}
             />
             <Quality
               validation={validation} validations={run.validations} liveErrors={liveValidation?.errors ?? null}

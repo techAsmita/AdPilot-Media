@@ -208,10 +208,11 @@ export async function regenerateAsset(
   const log = opts.log ?? makeLog();
   const next = structuredClone(pack);
   if (opts.demo || !hasKey()) {
-    // Nothing to regenerate from in a recorded run; hand back the draft version
-    // so the button still demonstrates the flow.
-    await sleep(1200);
-    (next as Record<string, unknown>)[asset] = structuredClone((MOCK_DRAFT as Record<string, unknown>)[asset]);
+    // A recorded run has nothing to regenerate from. Returning the draft version
+    // here used to reintroduce its planted errors, which looked like the feature
+    // was broken, so this is a no-op. The UI disables the control in DEMO and the
+    // route refuses the request; this is only the last line of defence.
+    log.warn("regen.skipped_demo", { asset });
     return next;
   }
   const schema = PackSchema.shape[asset];

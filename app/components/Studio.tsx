@@ -29,7 +29,7 @@ export function Studio(p: {
   update: (asset: AssetKey, fn: (p: Pack) => void) => void;
   image: ImgState; regenImage: () => void;
   ctx: EvCtx; steps: Record<StepId, StepState>; error: string | null;
-  regenAsset: (k: AssetKey) => void; regenning: AssetKey | null; canRegen: boolean;
+  regenAsset: (k: AssetKey) => void; regenning: AssetKey | null; canRegen: boolean; regenBlockedReason: string | null;
 }) {
   const { tab, pack } = p;
   // Edits are attributed to the open tab so the reviewer's approval of that asset can be withdrawn.
@@ -113,8 +113,8 @@ export function Studio(p: {
             {tab !== "image" && p.canRegen && (
               <button
                 className="btn sm"
-                disabled={p.running || p.showingDraft || p.regenning !== null}
-                title="Rewrite just this channel, keeping the rest of the pack"
+                disabled={p.running || p.showingDraft || p.regenning !== null || p.regenBlockedReason !== null}
+                title={p.regenBlockedReason ?? "Rewrite just this channel, keeping the rest of the pack"}
                 onClick={() => p.regenAsset(tab)}
               >
                 <RefreshCw size={14} className={p.regenning === tab ? "spin" : ""} /> {p.regenning === tab ? "Rewriting…" : "Rewrite"}
