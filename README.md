@@ -322,7 +322,7 @@ This is a public URL that spends money on every request, so a few things are enf
 | **Headers** | CSP, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, COOP; `x-powered-by` removed |
 | **Traceability** | `lib/log.ts` gives every server line a request id, so the four model calls, the image call and any provider failure from one run read together |
 
-Two limits worth being explicit about:
+Three limits worth being explicit about:
 
 - **Rate-limit counters are in-process.** On serverless, each instance keeps its own, so the real limit is `limit × live instances`. Enough to stop casual abuse; a shared store (Redis/Upstash) is the next step.
 - **`script-src` still needs `'unsafe-inline'`** for the pre-paint theme script and Next's own bootstrap. The policy still blocks third-party script origins; a middleware-issued nonce would tighten it.
