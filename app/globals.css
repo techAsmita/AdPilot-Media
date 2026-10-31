@@ -391,9 +391,21 @@ button.row:hover .rm { color: var(--text); }
 .page h1 { font-family: var(--serif); font-weight: 500; font-size: 38px; letter-spacing: -0.02em; }
 .page > p { color: var(--muted); margin: 6px 0 22px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
-.lcard { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); text-align: left; }
+/* min-width: 0 — a grid item defaults to min-content width, and a long URL has no
+   break opportunity, so without this the card stretches past its track. */
+.lcard { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); text-align: left; min-width: 0; overflow: hidden; }
 .lcard:hover { border-color: var(--line-2); }
-.lcard h3 { font-family: var(--serif); font-size: 18px; font-weight: 600; line-height: 1.25; }
+/* Topics are often raw news URLs: break them anywhere, then clamp to three lines
+   so cards keep an even height. The full text stays available via the title. */
+.lcard h3 {
+  font-family: var(--serif); font-size: 18px; font-weight: 600; line-height: 1.25;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
 .lcard .meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); }
 .lcard .thumb { aspect-ratio: 16 / 7; border-radius: 8px; background: var(--surface-2) center / cover no-repeat; border: 1px solid var(--line); }
 .lcard .acts { display: flex; gap: 8px; margin-top: auto; }

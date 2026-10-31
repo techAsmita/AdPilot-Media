@@ -1,6 +1,7 @@
 "use client";
 import { Download, FolderOpen, Trash2 } from "lucide-react";
 import { download, type ExportRecord, type RunState } from "@/lib/client";
+import { ASSETS } from "@/lib/schema";
 
 export function LibraryPage({ runs, onOpen, onDelete }: { runs: RunState[]; onOpen: (r: RunState) => void; onDelete: (id: string) => void }) {
   return (
@@ -17,12 +18,12 @@ export function LibraryPage({ runs, onOpen, onDelete }: { runs: RunState[]; onOp
             return (
               <div key={r.id} className="lcard">
                 <div className="thumb" style={r.image?.dataUrl ? { backgroundImage: `url(${r.image.dataUrl})` } : undefined} />
-                <h3>{r.topic}</h3>
+                <h3 title={r.topic}>{r.topic}</h3>
                 <div className="meta">
                   <span>{new Date(r.at).toLocaleString()}</span>
                   <span className={`pill-s ${r.mode === "live" ? "g" : "m"}`}>{r.mode}</span>
                   <span className={`pill-s ${last ? "r" : "g"}`}>{first} → {last} err</span>
-                  <span className="pill-s m">{r.approved.length}/7 approved</span>
+                  <span className="pill-s m">{r.approved.length}/{ASSETS.length} approved</span>
                 </div>
                 <div className="acts">
                   <button className="btn sm primary" onClick={() => onOpen(r)}><FolderOpen size={14} /> Open</button>
@@ -43,13 +44,13 @@ export function ExportsPage({ exports }: { exports: ExportRecord[] }) {
       <h1>Exports</h1>
       <p>Content packs that passed human review and were exported. Nothing here was published — export is a hand-off file.</p>
       {exports.length === 0 ? (
-        <div className="blank">No exports yet. Approve all 7 assets of a run to unlock Export.</div>
+        <div className="blank">No exports yet. Approve at least one asset of a run to export it.</div>
       ) : (
         <div className="cards">
           {exports.map((e) => (
             <div key={e.id} className="lcard">
-              <h3>{e.topic}</h3>
-              <div className="meta"><span>{new Date(e.at).toLocaleString()}</span><span className="pill-s g">{e.approved}/7 approved</span></div>
+              <h3 title={e.topic}>{e.topic}</h3>
+              <div className="meta"><span>{new Date(e.at).toLocaleString()}</span><span className="pill-s g">{e.approved}/{ASSETS.length} approved</span></div>
               <div className="acts"><button className="btn sm" onClick={() => download(`adpilot-pack-${e.id}.md`, e.markdown)}><Download size={14} /> Download .md</button></div>
             </div>
           ))}
